@@ -125,8 +125,8 @@ int main(int argc, char* argv[]) {
                     .mu = cfg.mu,
                     .alpha = cfg.alpha,
                     .beta = cfg.beta,
-                    .gamma = cfg.gamma
-                    ,
+                    .lambda = cfg.lambda,
+                    .gamma = cfg.gamma,
                     .eta = cfg.eta
                 };
 
@@ -183,6 +183,7 @@ int main(int argc, char* argv[]) {
                     .mu = cfg.mu,
                     .alpha = cfg.alpha,
                     .beta = cfg.beta,
+                    .lambda = cfg.lambda,
                     .gamma = cfg.gamma,
                     .eta = cfg.eta,
                     .delta = cfg.delta,
@@ -232,6 +233,7 @@ int main(int argc, char* argv[]) {
                     << cfg.mu << ','
                     << cfg.alpha << ','
                     << cfg.beta << ','
+                    << cfg.lambda << ','
                     << cfg.gamma << ','
                     << cfg.eta << ','
                     << cfg.delta << ','
@@ -269,6 +271,7 @@ int main(int argc, char* argv[]) {
                           << cfg.mu << ','
                           << cfg.alpha << ','
                           << cfg.beta << ','
+                          << cfg.lambda << ','
                           << cfg.gamma << ','
                           << cfg.eta << ','
                           << cfg.delta << ','

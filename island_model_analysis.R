@@ -17,21 +17,21 @@ runs <- expand.grid(
     "seed" = c(12345),                        
     "columns" = c(4),                  
     "layers" = c(6),
-    "cross_column_depth" = c(1),
-    "island_count" = c(5),
-    "m" = c(0.0),                      # migration rate (0 for no migration, 1 for complete mixing)
-    "rho" = c(0.08),                   # reset rate 
-    "mu" = c(0.0005),                    # innovation rate
+    "cross_column_depth" = c(1),       # max layer at which there should be incoming diagonal edges (1 for none) 
+    "island_count" = c(10),
+    "m" = c(0.01, 0.1, 0.3),           # migration rate (0 for no migration, 1 for complete mixing)
+    "rho" = c(0.1),                    # reset rate 
+    "mu" = c(0.05),                    # innovation rate
     "alpha" = c(1),                    # frequency bias (1 for random copying, >1 for conformity, <1 for anti-conformity)
-    "beta" = c(2),                     # payoff expression bias (0 for no payoff bias, >0 for more bias towards expressing higher payoff traits)
-    "gamma" = c(3),                    # payoff bias (0 for no payoff bias, >0 for more bias towards copying higher payoff traits)
-    "eta" = c(0),                      # transparency (0 for opaque prerequisite structure, 1 for fully transparent; only accessible traits are attempted)
-    "delta" = c(0.1),                  # payoff scaling by layer (0 for no scaling, >0 for higher layers having higher payoffs)
-    "sigma_b" = c(8),                  # payoff variability across columns (0 for no variability, >0 for more variability)
+    "beta" = c(1),                     # payoff expression bias (0 for no payoff bias, >0 for more bias towards expressing higher payoff traits)
+    "gamma" = c(0),                    # payoff bias (0 for no payoff bias, >0 for more bias towards copying higher payoff traits)
+    "lambda" = c(0),                   # prestige bias (0 for no prestige bias, >0 for more bias towards copying demonstrators with higher total payoff)
+    "eta" = c(1),                      # transparency (0 for opaque prerequisite structure, 1 for fully transparent; only accessible traits are attempted)
+    "delta" = c(4),                    # payoff scaling by layer (0 for no scaling, >0 for higher layers having higher payoffs)
+    "sigma_b" = c(0.25),               # payoff variability across columns (0 for no variability, >0 for more variability)
     "sigma_nu" = c(0.0),               # payoff variability across traits (0 for no variability, >0 for more variability)
     "k" = c(0.00)                      # payoff correlation across islands (0 for no correlation, 1 for perfect correlation
-) %>% 
-    dplyr::filter(columns != layers)
+) 
 
 res <- run_island_model(runs, threads = 15)
 
@@ -43,7 +43,14 @@ res <- run_island_model(runs, threads = 15)
 
 plot_trait_equilibrium_graph_by_island(subset(res$traits, run_id == 0), n = 10)
 
-plot_f_rep_by_migration_rate(res$time)
+plot_dv_by_time_m(res$time, "cultural_divergence")
+
+plot_dv_by_time_m(res$time, "adaptive_divergence")
+
+
+tapply(res$equilibrium$cultural_divergence_run, res$equilibrium$m, max)
+tapply(res$equilibrium$adaptive_divergence_run, res$equilibrium$m, max)
+
 
 p1 <- res$time %>%
     filter(
@@ -77,9 +84,9 @@ test_grid_graph <- lattice_payoff_graph(
     columns = 4,
     layers = 6,
     island_count = 10,
-    delta = 2,
-    sigma_b = 3,
-    sigma_nu = 0.1,
+    delta = 8,
+    sigma_b = 1.25,
+    sigma_nu = 0.0,
     k = 0.0,
     seed = 12345,
     island = 1
@@ -402,9 +409,9 @@ print(regression_summary)
 time_df <- read_csv("time_bookkeeping.csv", show_col_types = FALSE) %>%
   mutate(
     step = as.numeric(step),
-    f_rep = as.numeric(f_rep),
-    within_distance = as.numeric(within_distance),
-    total_distance = as.numeric(total_distance),
+    adaptive_divergence = as.numeric(adaptive_divergence),
+    cultural_divergence = as.numeric(cultural_divergence),
+    divergence_pair_count = as.numeric(divergence_pair_count),
     mean_payoff = as.numeric(mean_payoff),
     adj_payoff = as.numeric(adj_payoff),
     mean_max_depth = as.numeric(mean_max_depth),
@@ -416,9 +423,9 @@ time_df <- read_csv("time_bookkeeping.csv", show_col_types = FALSE) %>%
   )
 
 time_vars <- c(
-  "f_rep",
-  "within_distance",
-  "total_distance",
+  "adaptive_divergence",
+  "cultural_divergence",
+  "divergence_pair_count",
   "mean_payoff",
   "adj_payoff",
   "mean_max_depth",
@@ -430,9 +437,9 @@ time_vars <- c(
 )
 
 time_labels <- c(
-  f_rep = "Repertoire differentiation (F_rep)",
-  within_distance = "Within-island Jaccard distance",
-  total_distance = "Total-population Jaccard distance",
+  adaptive_divergence = "Adaptive Divergence",
+  cultural_divergence = "Cultural Divergence",
+  divergence_pair_count = "Island Pair Count",
   mean_payoff = "Mean Payoff",
   adj_payoff = "Adjusted Payoff",
   mean_max_depth = "Mean Max Depth",
@@ -634,9 +641,9 @@ df <- df %>%
     mutate(
         run_id = as.integer(run_id),
         step = as.integer(step),
-    f_rep = as.numeric(f_rep),
-    within_distance = as.numeric(within_distance),
-    total_distance = as.numeric(total_distance),
+    adaptive_divergence = as.numeric(adaptive_divergence),
+    cultural_divergence = as.numeric(cultural_divergence),
+    divergence_pair_count = as.numeric(divergence_pair_count),
         across(any_of(present_parameter_cols), as.factor)
     )
 

@@ -54,7 +54,7 @@ int main() {
     std::mt19937_64 rng(123);
     im::PayoffParams payoff_params{.delta = 1.0, .sigma_b = 0.5, .sigma_nu = 0.1, .k = 0.25};
     im::PayoffLandscape payoff(lattice, 2, payoff_params, rng);
-    im::DynamicsParams dynamics{.m = 0.1, .rho = 0.05, .mu = 0.2, .alpha = 1.0, .beta = 1.0, .gamma = 1.0, .eta = 0.0};
+    im::DynamicsParams dynamics{.m = 0.1, .rho = 0.05, .mu = 0.2, .alpha = 1.0, .beta = 1.0, .lambda = 0.0, .gamma = 1.0, .eta = 0.0};
     im::Simulator simulator(states, payoff, dynamics);
 
     auto initial = simulator.initial_state_all_empty();
@@ -75,6 +75,7 @@ int main() {
         .mu = dynamics.mu,
         .alpha = dynamics.alpha,
         .beta = dynamics.beta,
+        .lambda = dynamics.lambda,
         .gamma = dynamics.gamma,
         .eta = dynamics.eta,
         .delta = payoff_params.delta,
@@ -96,8 +97,8 @@ add_executable(island_model_header_smoke "${HEADER_SMOKE_SOURCE}")
 target_link_libraries(island_model_header_smoke PRIVATE island_model_headers)
 
 add_executable(
-    repertoire_differentiation_test
-    "${CMAKE_SOURCE_DIR}/src/analysis/repertoire_differentiation_test.cpp"
+    divergence_test
+    "${CMAKE_SOURCE_DIR}/src/analysis/divergence_test.cpp"
 )
-target_link_libraries(repertoire_differentiation_test PRIVATE island_model_headers)
-add_test(NAME repertoire_differentiation_test COMMAND repertoire_differentiation_test)
+target_link_libraries(divergence_test PRIVATE island_model_headers)
+add_test(NAME divergence_test COMMAND divergence_test)

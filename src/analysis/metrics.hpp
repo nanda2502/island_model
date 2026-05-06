@@ -1,8 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <bit>
-#include <cmath>
 #include <cstddef>
 #include <limits>
 #include <stdexcept>
@@ -38,10 +36,9 @@ struct TraitFrequencyMatrix {
     }
 };
 
-struct RepertoireDifferentiationSummary {
-    double within_distance{0.0};
-    double total_distance{0.0};
-    double f_rep{0.0};
+struct DivergenceSummary {
+    double mean_distance{0.0};
+    std::size_t pair_count{0};
 };
 
 class RepertoireSummaries {
@@ -95,35 +92,6 @@ public:
     using reachable_states_type = ReachableStates;
     using population_state_type = PopulationState;
 
-    static double repertoire_jaccard_distance(const Repertoire& a,
-                                              const Repertoire& b) {
-        if (a.trait_count() != b.trait_count()) {
-            throw std::invalid_argument("DifferentiationMetrics::repertoire_jaccard_distance: trait-count mismatch");
-        }
-
-        const auto& a_words = a.words();
-        const auto& b_words = b.words();
-        if (a_words.size() != b_words.size()) {
-            throw std::invalid_argument("DifferentiationMetrics::repertoire_jaccard_distance: bitset word-count mismatch");
-        }
-
-        std::size_t intersection_size = 0;
-        std::size_t union_size = 0;
-
-        for (std::size_t i = 0; i < a_words.size(); ++i) {
-            const std::uint64_t aw = a_words[i];
-            const std::uint64_t bw = b_words[i];
-            intersection_size += static_cast<std::size_t>(std::popcount(aw & bw));
-            union_size += static_cast<std::size_t>(std::popcount(aw | bw));
-        }
-
-        if (union_size == 0) {
-            return 0.0;
-        }
-
-        return 1.0 - (static_cast<double>(intersection_size) / static_cast<double>(union_size));
-    }
-
     static TraitFrequencyMatrix trait_frequencies(const population_state_type& population,
                                                   const reachable_states_type& states) {
         const std::size_t island_count = population.island_count();
@@ -157,109 +125,118 @@ public:
         return out;
     }
 
-    static RepertoireDifferentiationSummary repertoire_differentiation(
+    static DivergenceSummary adaptive_divergence(
         const population_state_type& population,
-        const reachable_states_type& states) {
+        const reachable_states_type& states,
+        const PayoffLandscape& payoff) {
         if (population.state_count() != states.size()) {
-            throw std::invalid_argument("DifferentiationMetrics::repertoire_differentiation: population/state-space size mismatch");
+            throw std::invalid_argument("DifferentiationMetrics::adaptive_divergence: population/state-space size mismatch");
+        }
+        if (population.island_count() != payoff.island_count()) {
+            throw std::invalid_argument("DifferentiationMetrics::adaptive_divergence: population/payoff island count mismatch");
+        }
+        if (states.lattice() != payoff.lattice()) {
+            throw std::invalid_argument("DifferentiationMetrics::adaptive_divergence: lattice mismatch");
         }
 
         const std::size_t island_count = population.island_count();
-        const std::size_t state_count = population.state_count();
-        if (island_count == 0 || state_count == 0) {
+        if (island_count < 2) {
             return {};
         }
 
-        const auto distance_cache = build_repertoire_distance_cache(states);
+        const auto frequencies = trait_frequencies(population, states);
+        DivergenceSummary out{};
 
-        RepertoireDifferentiationSummary out{};
-        for (IslandId island = 0; island < island_count; ++island) {
-            std::vector<double> island_distribution(state_count, 0.0);
-            for (StateId state = 0; state < state_count; ++state) {
-                island_distribution[static_cast<std::size_t>(state)] = population(island, state);
+        for (IslandId i = 0; i < island_count; ++i) {
+            for (IslandId j = i + 1; j < island_count; ++j) {
+                out.mean_distance += payoff_weighted_jaccard_distance(
+                    frequencies,
+                    i,
+                    j,
+                    payoff);
+                ++out.pair_count;
             }
-            out.within_distance += weighted_average_distance(
-                island_distribution,
-                distance_cache,
-                state_count);
         }
-        out.within_distance /= static_cast<double>(island_count);
 
-        std::vector<double> metapop_distribution(state_count, 0.0);
-        for (StateId state = 0; state < state_count; ++state) {
-            double avg = 0.0;
-            for (IslandId island = 0; island < island_count; ++island) {
-                avg += population(island, state);
+        if (out.pair_count > 0) {
+            out.mean_distance /= static_cast<double>(out.pair_count);
+        }
+
+        return out;
+    }
+
+    static DivergenceSummary cultural_divergence(
+        const population_state_type& population,
+        const reachable_states_type& states) {
+        if (population.state_count() != states.size()) {
+            throw std::invalid_argument("DifferentiationMetrics::cultural_divergence: population/state-space size mismatch");
+        }
+
+        const std::size_t island_count = population.island_count();
+        if (island_count < 2) {
+            return {};
+        }
+
+        const auto frequencies = trait_frequencies(population, states);
+        DivergenceSummary out{};
+
+        for (IslandId i = 0; i < island_count; ++i) {
+            for (IslandId j = i + 1; j < island_count; ++j) {
+                out.mean_distance += jaccard_distance(frequencies, i, j);
+                ++out.pair_count;
             }
-            metapop_distribution[static_cast<std::size_t>(state)] =
-                avg / static_cast<double>(island_count);
         }
 
-        out.total_distance = weighted_average_distance(
-            metapop_distribution,
-            distance_cache,
-            state_count);
-
-        if (out.total_distance <= 0.0) {
-            out.f_rep = 0.0;
-            return out;
+        if (out.pair_count > 0) {
+            out.mean_distance /= static_cast<double>(out.pair_count);
         }
-
-        out.f_rep = 1.0 - (out.within_distance / out.total_distance);
-        constexpr double tolerance = 1e-12;
-        if (out.f_rep < 0.0 && std::abs(out.f_rep) <= tolerance) {
-            out.f_rep = 0.0;
-        }
-        if (out.f_rep > 1.0 && std::abs(out.f_rep - 1.0) <= tolerance) {
-            out.f_rep = 1.0;
-        }
-        out.f_rep = std::clamp(out.f_rep, 0.0, 1.0);
 
         return out;
     }
 
 private:
-    static std::vector<double> build_repertoire_distance_cache(const reachable_states_type& states) {
-        const std::size_t state_count = states.size();
-        std::vector<double> cache(state_count * state_count, 0.0);
+    static double payoff_weighted_jaccard_distance(const TraitFrequencyMatrix& frequencies,
+                                                   IslandId island_a,
+                                                   IslandId island_b,
+                                                   const PayoffLandscape& payoff) {
+        double numerator = 0.0;
+        double denominator = 0.0;
 
-        for (StateId r1 = 0; r1 < state_count; ++r1) {
-            cache[static_cast<std::size_t>(r1) * state_count + static_cast<std::size_t>(r1)] = 0.0;
-            for (StateId r2 = r1 + 1; r2 < state_count; ++r2) {
-                const double dist = repertoire_jaccard_distance(
-                    states.repertoire(r1),
-                    states.repertoire(r2));
-                cache[static_cast<std::size_t>(r1) * state_count + static_cast<std::size_t>(r2)] = dist;
-                cache[static_cast<std::size_t>(r2) * state_count + static_cast<std::size_t>(r1)] = dist;
-            }
+        for (TraitId trait = 0; trait < frequencies.trait_count; ++trait) {
+            const double q_a = frequencies(island_a, trait);
+            const double q_b = frequencies(island_b, trait);
+            const double weight = 0.5 * (payoff(island_a, trait) + payoff(island_b, trait));
+
+            numerator += weight * std::min(q_a, q_b);
+            denominator += weight * std::max(q_a, q_b);
         }
 
-        return cache;
+        if (denominator <= 0.0) {
+            return 0.0;
+        }
+
+        return 1.0 - (numerator / denominator);
     }
 
-    static double weighted_average_distance(const std::vector<double>& distribution,
-                                            const std::vector<double>& distance_cache,
-                                            std::size_t state_count) {
-        double out = 0.0;
-        for (StateId r1 = 0; r1 < state_count; ++r1) {
-            const double p1 = distribution[static_cast<std::size_t>(r1)];
-            if (p1 <= 0.0) {
-                continue;
-            }
+    static double jaccard_distance(const TraitFrequencyMatrix& frequencies,
+                                   IslandId island_a,
+                                   IslandId island_b) {
+        double numerator = 0.0;
+        double denominator = 0.0;
 
-            for (StateId r2 = 0; r2 < state_count; ++r2) {
-                const double p2 = distribution[static_cast<std::size_t>(r2)];
-                if (p2 <= 0.0) {
-                    continue;
-                }
+        for (TraitId trait = 0; trait < frequencies.trait_count; ++trait) {
+            const double q_a = frequencies(island_a, trait);
+            const double q_b = frequencies(island_b, trait);
 
-                const double d = distance_cache[
-                    static_cast<std::size_t>(r1) * state_count + static_cast<std::size_t>(r2)];
-                out += p1 * p2 * d;
-            }
+            numerator += std::min(q_a, q_b);
+            denominator += std::max(q_a, q_b);
         }
 
-        return out;
+        if (denominator <= 0.0) {
+            return 0.0;
+        }
+
+        return 1.0 - (numerator / denominator);
     }
 };
 

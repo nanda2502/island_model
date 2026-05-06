@@ -22,6 +22,7 @@ public:
             << "mu,"
             << "alpha,"
             << "beta,"
+            << "lambda,"
             << "gamma,"
             << "eta,"
             << "delta,"
@@ -32,9 +33,9 @@ public:
             << "steps_to_equilibrium,"
             << "final_distance,"
             << "step,"
-            << "f_rep,"
-            << "within_distance,"
-            << "total_distance,"
+            << "adaptive_divergence,"
+            << "cultural_divergence,"
+            << "divergence_pair_count,"
             << "mean_payoff,"
             << "adj_payoff,"
             << "mean_max_depth,"
@@ -60,6 +61,7 @@ public:
                 << meta.mu << ','
                 << meta.alpha << ','
                 << meta.beta << ','
+                << meta.lambda << ','
                 << meta.gamma << ','
                 << meta.eta << ','
                 << meta.delta << ','
@@ -70,9 +72,9 @@ public:
                 << meta.steps_to_equilibrium << ','
                 << meta.final_distance << ','
                 << snapshot.step << ','
-                << snapshot.f_rep << ','
-                << snapshot.within_distance << ','
-                << snapshot.total_distance << ','
+                << snapshot.adaptive_divergence << ','
+                << snapshot.cultural_divergence << ','
+                << snapshot.divergence_pair_count << ','
                 << snapshot.mean_payoff << ','
                 << snapshot.adj_payoff << ','
                 << snapshot.mean_max_depth << ','

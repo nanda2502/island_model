@@ -26,6 +26,7 @@ struct EquilibriumRunMetadata {
     double mu{0.0};
     double alpha{0.0};
     double beta{0.0};
+    double lambda{0.0};
     double gamma{0.0};
     double eta{0.0};
 
@@ -58,6 +59,7 @@ public:
             << "mu,"
             << "alpha,"
             << "beta,"
+            << "lambda,"
             << "gamma,"
             << "eta,"
             << "delta,"
@@ -75,9 +77,9 @@ public:
             << "repertoire_payoff_sum,"
             << "repertoire_payoff_mean,"
             << "repertoire_payoff_max,"
-            << "f_rep_run,"
-            << "within_distance_run,"
-            << "total_distance_run\n";
+            << "adaptive_divergence_run,"
+            << "cultural_divergence_run,"
+            << "divergence_pair_count_run\n";
     }
 
     static void write_rows(std::ostream& out,
@@ -87,8 +89,15 @@ public:
                            const payoff_landscape_type& payoff,
                            double frequency_threshold = 0.0) {
         validate(meta, equilibrium_state, states, payoff, frequency_threshold);
-        const auto differentiation_summary =
-            DifferentiationMetrics::repertoire_differentiation(equilibrium_state, states);
+        const auto adaptive_divergence =
+            DifferentiationMetrics::adaptive_divergence(
+                equilibrium_state,
+                states,
+                payoff);
+        const auto cultural_divergence =
+            DifferentiationMetrics::cultural_divergence(
+                equilibrium_state,
+                states);
 
         for (IslandId island = 0; island < equilibrium_state.island_count(); ++island) {
             for (StateId repertoire_id = 0; repertoire_id < equilibrium_state.state_count(); ++repertoire_id) {
@@ -111,9 +120,9 @@ public:
                     repertoire_id,
                     frequency,
                     summary,
-                    differentiation_summary.f_rep,
-                    differentiation_summary.within_distance,
-                    differentiation_summary.total_distance);
+                    adaptive_divergence.mean_distance,
+                    cultural_divergence.mean_distance,
+                    adaptive_divergence.pair_count);
             }
         }
     }
@@ -156,9 +165,9 @@ private:
                           StateId repertoire_id,
                           double frequency,
                           const RepertoireSummary& summary,
-                          double f_rep_run,
-                          double within_distance_run,
-                          double total_distance_run) {
+                          double adaptive_divergence_run,
+                          double cultural_divergence_run,
+                          std::size_t divergence_pair_count_run) {
         out << meta.run_id << ','
             << meta.seed << ','
             << meta.columns << ','
@@ -170,6 +179,7 @@ private:
             << meta.mu << ','
             << meta.alpha << ','
             << meta.beta << ','
+            << meta.lambda << ','
             << meta.gamma << ','
             << meta.eta << ','
             << meta.delta << ','
@@ -187,9 +197,9 @@ private:
             << summary.repertoire_payoff_sum << ','
             << summary.repertoire_payoff_mean << ','
             << summary.repertoire_payoff_max << ','
-            << f_rep_run << ','
-            << within_distance_run << ','
-            << total_distance_run
+            << adaptive_divergence_run << ','
+            << cultural_divergence_run << ','
+            << divergence_pair_count_run
             << '\n';
     }
 };
@@ -212,6 +222,7 @@ public:
             << "mu,"
             << "alpha,"
             << "beta,"
+            << "lambda,"
             << "gamma,"
             << "eta,"
             << "delta,"
@@ -252,6 +263,7 @@ public:
                     << meta.mu << ','
                     << meta.alpha << ','
                     << meta.beta << ','
+                    << meta.lambda << ','
                     << meta.gamma << ','
                     << meta.eta << ','
                     << meta.delta << ','

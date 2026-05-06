@@ -13,6 +13,7 @@
 #include "../dynamics/visibility.hpp"
 #include "../dynamics/weights.hpp"
 #include "../model/payoff_landscape.hpp"
+#include "../model/repertoire_payoff_cache.hpp"
 #include "../state/population_state.hpp"
 #include "../state_space/reachable_states.hpp"
 
@@ -24,6 +25,7 @@ struct DynamicsParams {
     double mu{0.0};
     double alpha{0.0};
     double beta{0.0};
+    double lambda{0.0};
     double gamma{0.0};
     double eta{0.0};
 };
@@ -33,6 +35,7 @@ public:
     using reachable_states_type = ReachableStates;
     using population_state_type = PopulationState;
     using payoff_landscape_type = PayoffLandscape;
+    using repertoire_payoff_cache_type = RepertoirePayoffCache;
     using visibility_field_type = VisibilityField;
     using weight_field_type = WeightField;
 
@@ -67,6 +70,7 @@ public:
         if (states_->lattice() != payoff_.lattice()) {
             throw std::invalid_argument("Simulator: state space/payoff lattice mismatch");
         }
+        payoff_cache_ = repertoire_payoff_cache_type(*states_, payoff_, params_.beta);
     }
 
     Simulator(reachable_states_type states,
@@ -105,7 +109,9 @@ public:
                 migrated_state,
                 states(),
                 payoff_,
-                params_.beta);
+                payoff_cache_,
+                params_.beta,
+                params_.lambda);
 
         auto weights =
             Weights::compute(
@@ -140,13 +146,19 @@ public:
                                                        double tolerance,
                                                        std::size_t log_interval = 0,
                                                        const std::function<void(std::size_t)>& progress_callback = {},
-                                                       std::size_t bookkeeping_interval = 0) const {
+                                                       std::size_t bookkeeping_interval = 0,
+                                                       const std::function<void(std::size_t)>& interrupt_callback = {}) const {
         validate_state(initial_state);
 
         population_state_type current = std::move(initial_state);
         std::vector<PopulationBookkeepingSnapshot> bookkeeping;
+        constexpr std::size_t interrupt_check_interval = 64;
 
         for (std::size_t step = 1; step <= max_steps; ++step) {
+            if (interrupt_callback && step % interrupt_check_interval == 0) {
+                interrupt_callback(step);
+            }
+
             population_state_type next = step_state_only(current);
             const double distance =
                 Convergence::max_island_l1(current, next);
@@ -226,6 +238,9 @@ private:
         if (params.beta < 0.0) {
             throw std::invalid_argument("Simulator: beta must be >= 0");
         }
+        if (params.lambda < 0.0) {
+            throw std::invalid_argument("Simulator: lambda must be >= 0");
+        }
         if (params.gamma < 0.0) {
             throw std::invalid_argument("Simulator: gamma must be >= 0");
         }
@@ -245,6 +260,7 @@ private:
 
     std::shared_ptr<const reachable_states_type> states_;
     payoff_landscape_type payoff_;
+    repertoire_payoff_cache_type payoff_cache_;
     DynamicsParams params_;
 };
 

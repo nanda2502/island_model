@@ -14,9 +14,9 @@ namespace island_model {
 
 struct PopulationBookkeepingSnapshot {
     std::size_t step{0};
-    double f_rep{0.0};
-    double within_distance{0.0};
-    double total_distance{0.0};
+    double adaptive_divergence{0.0};
+    double cultural_divergence{0.0};
+    std::size_t divergence_pair_count{0};
     double mean_payoff{0.0};
     double adj_payoff{0.0};
     double mean_max_depth{0.0};
@@ -48,11 +48,13 @@ public:
             return out;
         }
 
-        const auto differentiation =
-            DifferentiationMetrics::repertoire_differentiation(population, states);
-        out.f_rep = differentiation.f_rep;
-        out.within_distance = differentiation.within_distance;
-        out.total_distance = differentiation.total_distance;
+        const auto adaptive_divergence =
+            DifferentiationMetrics::adaptive_divergence(population, states, payoff);
+        const auto cultural_divergence =
+            DifferentiationMetrics::cultural_divergence(population, states);
+        out.adaptive_divergence = adaptive_divergence.mean_distance;
+        out.cultural_divergence = cultural_divergence.mean_distance;
+        out.divergence_pair_count = adaptive_divergence.pair_count;
 
         std::vector<double> column_mass(lattice.columns(), 0.0);
         double total_column_mass = 0.0;

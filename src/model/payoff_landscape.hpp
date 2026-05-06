@@ -63,39 +63,46 @@ public:
     }
 
 private:
+    static constexpr double baseline_payoff_{1.0};
     static constexpr double payoff_buffer_epsilon_{1e-6};
 
     template <class Rng>
     void build(const PayoffParams& params, Rng& rng) {
         std::normal_distribution<double> standard_normal(0.0, 1.0);
 
-        // Shared column effect across islands.
-        std::vector<double> shared(lattice_.columns(), 0.0);
-        std::vector<double> column_effect(island_count_ * lattice_.columns(), 0.0);
+        // Correlated column scores induce lognormal returns to depth.
+        std::vector<double> shared_score(lattice_.columns(), 0.0);
+        std::vector<double> column_return(island_count_ * lattice_.columns(), 0.0);
 
-        const double shared_scale = params.sigma_b * std::sqrt(params.k);
-        const double residual_scale = params.sigma_b * std::sqrt(1.0 - params.k);
+        const double shared_scale = std::sqrt(params.k);
+        const double residual_scale = std::sqrt(1.0 - params.k);
 
-        for (double& value : shared) {
+        for (double& value : shared_score) {
             value = standard_normal(rng);
         }
 
         for (IslandId island = 0; island < island_count_; ++island) {
             for (Column column = 0; column < lattice_.columns(); ++column) {
-                column_effect[column_index(island, column)] =
-                    shared_scale * shared[column] +
+                const double z =
+                    shared_scale * shared_score[column] +
                     residual_scale * standard_normal(rng);
+                column_return[column_index(island, column)] =
+                    std::exp(params.sigma_b * z);
             }
         }
 
+        const double layer_count = static_cast<double>(lattice_.layers());
         for (Layer layer = 0; layer < lattice_.layers(); ++layer) {
+            const double depth_return =
+                std::pow((static_cast<double>(layer) + 1.0) / layer_count, params.delta);
             for (IslandId island = 0; island < island_count_; ++island) {
                 for (Column column = 0; column < lattice_.columns(); ++column) {
                     const TraitId trait = lattice_.id(column, layer);
-                    const double mean = params.delta * static_cast<double>(layer + 1);
                     const double nu = params.sigma_nu * standard_normal(rng);
                     payoffs_[index(island, trait)] =
-                        mean + column_effect[column_index(island, column)] + nu;
+                        baseline_payoff_ +
+                        column_return[column_index(island, column)] * depth_return +
+                        nu;
                 }
             }
         }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ranges"
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
@@ -21,6 +22,7 @@ struct RunConfig {
     double mu{0.0};
     double alpha{0.0};
     double beta{0.0};
+    double lambda{0.0};
     double gamma{0.0};
     double eta{0.0};
 
@@ -42,6 +44,7 @@ struct ParameterGrid {
     std::vector<double> mus;
     std::vector<double> alphas;
     std::vector<double> betas;
+    std::vector<double> lambdas;
     std::vector<double> gammas;
     std::vector<double> etas;
 
@@ -63,6 +66,7 @@ inline void validate_grid(const ParameterGrid& grid) {
     if (grid.mus.empty()) throw std::invalid_argument("ParameterGrid: mus is empty");
     if (grid.alphas.empty()) throw std::invalid_argument("ParameterGrid: alphas is empty");
     if (grid.betas.empty()) throw std::invalid_argument("ParameterGrid: betas is empty");
+    if (grid.lambdas.empty()) throw std::invalid_argument("ParameterGrid: lambdas is empty");
     if (grid.gammas.empty()) throw std::invalid_argument("ParameterGrid: gammas is empty");
     if (grid.etas.empty()) throw std::invalid_argument("ParameterGrid: etas is empty");
 
@@ -82,6 +86,7 @@ inline void validate_grid(const ParameterGrid& grid) {
     if (cfg.mu < 0.0 || cfg.mu > 1.0) return false;
     if (cfg.alpha < 0.0) return false;
     if (cfg.beta < 0.0) return false;
+    if (cfg.lambda < 0.0) return false;
     if (cfg.gamma < 0.0) return false;
     if (cfg.eta < 0.0 || cfg.eta > 1.0) return false;
     if (cfg.sigma_b < 0.0) return false;
@@ -91,69 +96,79 @@ inline void validate_grid(const ParameterGrid& grid) {
     return true;
 }
 
-[[nodiscard]] inline std::vector<RunConfig> make_parameter_combinations(const ParameterGrid& grid) {
+[[nodiscard]] inline std::vector<RunConfig>
+make_parameter_combinations(const ParameterGrid& grid) {
     validate_grid(grid);
 
     std::vector<RunConfig> combinations;
     std::uint64_t run_id = 0;
 
-    for (const auto columns : grid.columns) {
-        for (const auto layers : grid.layers) {
-            for (const auto cross_column_depth : grid.cross_column_depths) {
-                for (const auto island_count : grid.island_counts) {
-                    for (const auto seed : grid.seeds) {
-                        for (const auto m : grid.ms) {
-                            for (const auto rho : grid.rhos) {
-                                for (const auto mu : grid.mus) {
-                                    for (const auto alpha : grid.alphas) {
-                                        for (const auto beta : grid.betas) {
-                                            for (const auto gamma : grid.gammas) {
-                                                for (const auto eta : grid.etas) {
-                                                    for (const auto delta : grid.deltas) {
-                                                        for (const auto sigma_b : grid.sigma_bs) {
-                                                            for (const auto sigma_nu : grid.sigma_nus) {
-                                                                for (const auto k : grid.ks) {
-                                                                    RunConfig cfg{
-                                                                        .run_id = run_id,
-                                                                        .seed = seed,
-                                                                        .columns = columns,
-                                                                        .layers = layers,
-                                                                        .cross_column_depth = cross_column_depth,
-                                                                        .island_count = island_count,
-                                                                        .m = m,
-                                                                        .rho = rho,
-                                                                        .mu = mu,
-                                                                        .alpha = alpha,
-                                                                        .beta = beta,
-                                                                        .gamma = gamma,
-                                                                        .eta = eta,
-                                                                        .delta = delta,
-                                                                        .sigma_b = sigma_b,
-                                                                        .sigma_nu = sigma_nu,
-                                                                        .k = k
-                                                                    };
+    for (auto values : std::ranges::views::cartesian_product(
+             grid.columns,
+             grid.layers,
+             grid.cross_column_depths,
+             grid.island_counts,
+             grid.seeds,
+             grid.ms,
+             grid.rhos,
+             grid.mus,
+             grid.alphas,
+             grid.betas,
+             grid.lambdas,
+             grid.gammas,
+             grid.etas,
+             grid.deltas,
+             grid.sigma_bs,
+             grid.sigma_nus,
+             grid.ks
+         )) {
+        const auto& [
+            columns,
+            layers,
+            cross_column_depth,
+            island_count,
+            seed,
+            m,
+            rho,
+            mu,
+            alpha,
+            beta,
+            lambda,
+            gamma,
+            eta,
+            delta,
+            sigma_b,
+            sigma_nu,
+            k
+        ] = values;
 
-                                                                    if (!is_valid_run_config(cfg)) {
-                                                                        continue;
-                                                                    }
+        RunConfig cfg{
+            .run_id = run_id,
+            .seed = seed,
+            .columns = columns,
+            .layers = layers,
+            .cross_column_depth = cross_column_depth,
+            .island_count = island_count,
+            .m = m,
+            .rho = rho,
+            .mu = mu,
+            .alpha = alpha,
+            .beta = beta,
+            .lambda = lambda,
+            .gamma = gamma,
+            .eta = eta,
+            .delta = delta,
+            .sigma_b = sigma_b,
+            .sigma_nu = sigma_nu,
+            .k = k
+        };
 
-                                                                    combinations.push_back(cfg);
-                                                                    ++run_id;
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if (!is_valid_run_config(cfg)) {
+            continue;
         }
+
+        combinations.push_back(cfg);
+        ++run_id;
     }
 
     return combinations;

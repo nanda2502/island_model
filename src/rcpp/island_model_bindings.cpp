@@ -147,6 +147,7 @@ struct EquilibriumRow {
     double mu{0.0};
     double alpha{0.0};
     double beta{0.0};
+    double lambda{0.0};
     double gamma{0.0};
     double eta{0.0};
     double delta{0.0};
@@ -164,9 +165,9 @@ struct EquilibriumRow {
     double repertoire_payoff_sum{0.0};
     double repertoire_payoff_mean{0.0};
     double repertoire_payoff_max{0.0};
-    double f_rep_run{0.0};
-    double within_distance_run{0.0};
-    double total_distance_run{0.0};
+    double adaptive_divergence_run{0.0};
+    double cultural_divergence_run{0.0};
+    std::size_t divergence_pair_count_run{0};
 };
 
 struct TimeRow {
@@ -181,6 +182,7 @@ struct TimeRow {
     double mu{0.0};
     double alpha{0.0};
     double beta{0.0};
+    double lambda{0.0};
     double gamma{0.0};
     double eta{0.0};
     double delta{0.0};
@@ -191,9 +193,9 @@ struct TimeRow {
     std::size_t steps_to_equilibrium{0};
     double final_distance{0.0};
     std::size_t step{0};
-    double f_rep{0.0};
-    double within_distance{0.0};
-    double total_distance{0.0};
+    double adaptive_divergence{0.0};
+    double cultural_divergence{0.0};
+    std::size_t divergence_pair_count{0};
     double mean_payoff{0.0};
     double adj_payoff{0.0};
     double mean_max_depth{0.0};
@@ -216,6 +218,7 @@ struct TraitRow {
     double mu{0.0};
     double alpha{0.0};
     double beta{0.0};
+    double lambda{0.0};
     double gamma{0.0};
     double eta{0.0};
     double delta{0.0};
@@ -278,6 +281,7 @@ std::vector<im::RunConfig> run_configs_from_df(const Rcpp::DataFrame& runs) {
     const auto mus = as_std_vector<Rcpp::NumericVector, double>(runs, "mu");
     const auto alphas = as_std_vector<Rcpp::NumericVector, double>(runs, "alpha");
     const auto betas = as_std_vector<Rcpp::NumericVector, double>(runs, "beta");
+    const auto lambdas = as_std_vector<Rcpp::NumericVector, double>(runs, "lambda");
     const auto gammas = as_std_vector<Rcpp::NumericVector, double>(runs, "gamma");
     const auto etas = as_std_vector<Rcpp::NumericVector, double>(runs, "eta");
     const auto deltas = as_std_vector<Rcpp::NumericVector, double>(runs, "delta");
@@ -301,6 +305,7 @@ std::vector<im::RunConfig> run_configs_from_df(const Rcpp::DataFrame& runs) {
             .mu = mus[i],
             .alpha = alphas[i],
             .beta = betas[i],
+            .lambda = lambdas[i],
             .gamma = gammas[i],
             .eta = etas[i],
             .delta = deltas[i],
@@ -335,6 +340,7 @@ im::EquilibriumRunMetadata metadata_from_config(const im::RunConfig& cfg,
         .mu = cfg.mu,
         .alpha = cfg.alpha,
         .beta = cfg.beta,
+        .lambda = cfg.lambda,
         .gamma = cfg.gamma,
         .eta = cfg.eta,
         .delta = cfg.delta,
@@ -352,8 +358,15 @@ std::vector<EquilibriumRow> collect_equilibrium_rows(const im::EquilibriumRunMet
                                                      const im::ReachableStates& states,
                                                      const im::PayoffLandscape& payoff,
                                                      double frequency_threshold) {
-    const auto differentiation_summary =
-        im::DifferentiationMetrics::repertoire_differentiation(equilibrium_state, states);
+    const auto adaptive_divergence =
+        im::DifferentiationMetrics::adaptive_divergence(
+            equilibrium_state,
+            states,
+            payoff);
+    const auto cultural_divergence =
+        im::DifferentiationMetrics::cultural_divergence(
+            equilibrium_state,
+            states);
     std::vector<EquilibriumRow> rows;
 
     for (IslandId island = 0; island < equilibrium_state.island_count(); ++island) {
@@ -378,6 +391,7 @@ std::vector<EquilibriumRow> collect_equilibrium_rows(const im::EquilibriumRunMet
                 .mu = meta.mu,
                 .alpha = meta.alpha,
                 .beta = meta.beta,
+                .lambda = meta.lambda,
                 .gamma = meta.gamma,
                 .eta = meta.eta,
                 .delta = meta.delta,
@@ -395,9 +409,9 @@ std::vector<EquilibriumRow> collect_equilibrium_rows(const im::EquilibriumRunMet
                 .repertoire_payoff_sum = summary.repertoire_payoff_sum,
                 .repertoire_payoff_mean = summary.repertoire_payoff_mean,
                 .repertoire_payoff_max = summary.repertoire_payoff_max,
-                .f_rep_run = differentiation_summary.f_rep,
-                .within_distance_run = differentiation_summary.within_distance,
-                .total_distance_run = differentiation_summary.total_distance
+                .adaptive_divergence_run = adaptive_divergence.mean_distance,
+                .cultural_divergence_run = cultural_divergence.mean_distance,
+                .divergence_pair_count_run = adaptive_divergence.pair_count
             });
         }
     }
@@ -423,6 +437,7 @@ std::vector<TimeRow> collect_time_rows(const im::EquilibriumRunMetadata& meta,
             .mu = meta.mu,
             .alpha = meta.alpha,
             .beta = meta.beta,
+            .lambda = meta.lambda,
             .gamma = meta.gamma,
             .eta = meta.eta,
             .delta = meta.delta,
@@ -433,9 +448,9 @@ std::vector<TimeRow> collect_time_rows(const im::EquilibriumRunMetadata& meta,
             .steps_to_equilibrium = meta.steps_to_equilibrium,
             .final_distance = meta.final_distance,
             .step = snapshot.step,
-            .f_rep = snapshot.f_rep,
-            .within_distance = snapshot.within_distance,
-            .total_distance = snapshot.total_distance,
+            .adaptive_divergence = snapshot.adaptive_divergence,
+            .cultural_divergence = snapshot.cultural_divergence,
+            .divergence_pair_count = snapshot.divergence_pair_count,
             .mean_payoff = snapshot.mean_payoff,
             .adj_payoff = snapshot.adj_payoff,
             .mean_max_depth = snapshot.mean_max_depth,
@@ -474,6 +489,7 @@ std::vector<TraitRow> collect_trait_rows(const im::EquilibriumRunMetadata& meta,
                 .mu = meta.mu,
                 .alpha = meta.alpha,
                 .beta = meta.beta,
+                .lambda = meta.lambda,
                 .gamma = meta.gamma,
                 .eta = meta.eta,
                 .delta = meta.delta,
@@ -501,10 +517,11 @@ Rcpp::DataFrame equilibrium_df_from_rows(const std::vector<EquilibriumRow>& rows
 
     Rcpp::NumericVector run_id(n), seed(n);
     Rcpp::IntegerVector columns(n), layers(n), cross_column_depth(n), island_count(n), converged(n), island(n),
-        repertoire_id(n), repertoire_size(n), max_layer(n), steps_to_equilibrium(n);
-    Rcpp::NumericVector m(n), rho(n), mu(n), alpha(n), beta(n), gamma(n), eta(n), delta(n), sigma_b(n), sigma_nu(n), k(n),
+        repertoire_id(n), repertoire_size(n), max_layer(n), steps_to_equilibrium(n),
+        divergence_pair_count_run(n);
+    Rcpp::NumericVector m(n), rho(n), mu(n), alpha(n), beta(n), lambda(n), gamma(n), eta(n), delta(n), sigma_b(n), sigma_nu(n), k(n),
         final_distance(n), frequency(n), repertoire_payoff_sum(n), repertoire_payoff_mean(n),
-        repertoire_payoff_max(n), f_rep_run(n), within_distance_run(n), total_distance_run(n);
+        repertoire_payoff_max(n), adaptive_divergence_run(n), cultural_divergence_run(n);
 
     for (R_xlen_t i = 0; i < n; ++i) {
         const auto& row = rows[static_cast<std::size_t>(i)];
@@ -519,6 +536,7 @@ Rcpp::DataFrame equilibrium_df_from_rows(const std::vector<EquilibriumRow>& rows
         mu[i] = row.mu;
         alpha[i] = row.alpha;
         beta[i] = row.beta;
+        lambda[i] = row.lambda;
         gamma[i] = row.gamma;
         eta[i] = row.eta;
         delta[i] = row.delta;
@@ -536,12 +554,12 @@ Rcpp::DataFrame equilibrium_df_from_rows(const std::vector<EquilibriumRow>& rows
         repertoire_payoff_sum[i] = row.repertoire_payoff_sum;
         repertoire_payoff_mean[i] = row.repertoire_payoff_mean;
         repertoire_payoff_max[i] = row.repertoire_payoff_max;
-        f_rep_run[i] = row.f_rep_run;
-        within_distance_run[i] = row.within_distance_run;
-        total_distance_run[i] = row.total_distance_run;
+        adaptive_divergence_run[i] = row.adaptive_divergence_run;
+        cultural_divergence_run[i] = row.cultural_divergence_run;
+        divergence_pair_count_run[i] = static_cast<int>(row.divergence_pair_count_run);
     }
 
-    Rcpp::List out(31);
+    Rcpp::List out(32);
     out[0] = run_id;
     out[1] = seed;
     out[2] = columns;
@@ -553,27 +571,28 @@ Rcpp::DataFrame equilibrium_df_from_rows(const std::vector<EquilibriumRow>& rows
     out[8] = mu;
     out[9] = alpha;
     out[10] = beta;
-    out[11] = gamma;
-    out[12] = eta;
-    out[13] = delta;
-    out[14] = sigma_b;
-    out[15] = sigma_nu;
-    out[16] = k;
-    out[17] = converged;
-    out[18] = steps_to_equilibrium;
-    out[19] = final_distance;
-    out[20] = island;
-    out[21] = repertoire_id;
-    out[22] = frequency;
-    out[23] = repertoire_size;
-    out[24] = max_layer;
-    out[25] = repertoire_payoff_sum;
-    out[26] = repertoire_payoff_mean;
-    out[27] = repertoire_payoff_max;
-    out[28] = f_rep_run;
-    out[29] = within_distance_run;
-    out[30] = total_distance_run;
-    Rcpp::CharacterVector names(31);
+    out[11] = lambda;
+    out[12] = gamma;
+    out[13] = eta;
+    out[14] = delta;
+    out[15] = sigma_b;
+    out[16] = sigma_nu;
+    out[17] = k;
+    out[18] = converged;
+    out[19] = steps_to_equilibrium;
+    out[20] = final_distance;
+    out[21] = island;
+    out[22] = repertoire_id;
+    out[23] = frequency;
+    out[24] = repertoire_size;
+    out[25] = max_layer;
+    out[26] = repertoire_payoff_sum;
+    out[27] = repertoire_payoff_mean;
+    out[28] = repertoire_payoff_max;
+    out[29] = adaptive_divergence_run;
+    out[30] = cultural_divergence_run;
+    out[31] = divergence_pair_count_run;
+    Rcpp::CharacterVector names(32);
     names[0] = "run_id";
     names[1] = "seed";
     names[2] = "columns";
@@ -585,26 +604,27 @@ Rcpp::DataFrame equilibrium_df_from_rows(const std::vector<EquilibriumRow>& rows
     names[8] = "mu";
     names[9] = "alpha";
     names[10] = "beta";
-    names[11] = "gamma";
-    names[12] = "eta";
-    names[13] = "delta";
-    names[14] = "sigma_b";
-    names[15] = "sigma_nu";
-    names[16] = "k";
-    names[17] = "converged";
-    names[18] = "steps_to_equilibrium";
-    names[19] = "final_distance";
-    names[20] = "island";
-    names[21] = "repertoire_id";
-    names[22] = "frequency";
-    names[23] = "repertoire_size";
-    names[24] = "max_layer";
-    names[25] = "repertoire_payoff_sum";
-    names[26] = "repertoire_payoff_mean";
-    names[27] = "repertoire_payoff_max";
-    names[28] = "f_rep_run";
-    names[29] = "within_distance_run";
-    names[30] = "total_distance_run";
+    names[11] = "lambda";
+    names[12] = "gamma";
+    names[13] = "eta";
+    names[14] = "delta";
+    names[15] = "sigma_b";
+    names[16] = "sigma_nu";
+    names[17] = "k";
+    names[18] = "converged";
+    names[19] = "steps_to_equilibrium";
+    names[20] = "final_distance";
+    names[21] = "island";
+    names[22] = "repertoire_id";
+    names[23] = "frequency";
+    names[24] = "repertoire_size";
+    names[25] = "max_layer";
+    names[26] = "repertoire_payoff_sum";
+    names[27] = "repertoire_payoff_mean";
+    names[28] = "repertoire_payoff_max";
+    names[29] = "adaptive_divergence_run";
+    names[30] = "cultural_divergence_run";
+    names[31] = "divergence_pair_count_run";
     out.attr("names") = names;
     out.attr("class") = "data.frame";
     out.attr("row.names") = Rcpp::IntegerVector::create(NA_INTEGER, -n);
@@ -617,7 +637,7 @@ Rcpp::DataFrame traits_df_from_rows(const std::vector<TraitRow>& rows) {
     Rcpp::NumericVector run_id(n), seed(n);
     Rcpp::IntegerVector columns(n), layers(n), cross_column_depth(n), island_count(n), converged(n),
         steps_to_equilibrium(n), island(n), trait_id(n), trait_column(n), trait_layer(n), is_base_layer(n);
-    Rcpp::NumericVector m(n), rho(n), mu(n), alpha(n), beta(n), gamma(n), eta(n), delta(n), sigma_b(n), sigma_nu(n), k(n),
+    Rcpp::NumericVector m(n), rho(n), mu(n), alpha(n), beta(n), lambda(n), gamma(n), eta(n), delta(n), sigma_b(n), sigma_nu(n), k(n),
         final_distance(n), frequency(n);
 
     for (R_xlen_t i = 0; i < n; ++i) {
@@ -633,6 +653,7 @@ Rcpp::DataFrame traits_df_from_rows(const std::vector<TraitRow>& rows) {
         mu[i] = row.mu;
         alpha[i] = row.alpha;
         beta[i] = row.beta;
+        lambda[i] = row.lambda;
         gamma[i] = row.gamma;
         eta[i] = row.eta;
         delta[i] = row.delta;
@@ -650,7 +671,7 @@ Rcpp::DataFrame traits_df_from_rows(const std::vector<TraitRow>& rows) {
         frequency[i] = row.frequency;
     }
 
-    Rcpp::List out(26);
+    Rcpp::List out(27);
     out[0] = run_id;
     out[1] = seed;
     out[2] = columns;
@@ -662,22 +683,23 @@ Rcpp::DataFrame traits_df_from_rows(const std::vector<TraitRow>& rows) {
     out[8] = mu;
     out[9] = alpha;
     out[10] = beta;
-    out[11] = gamma;
-    out[12] = eta;
-    out[13] = delta;
-    out[14] = sigma_b;
-    out[15] = sigma_nu;
-    out[16] = k;
-    out[17] = converged;
-    out[18] = steps_to_equilibrium;
-    out[19] = final_distance;
-    out[20] = island;
-    out[21] = trait_id;
-    out[22] = trait_column;
-    out[23] = trait_layer;
-    out[24] = is_base_layer;
-    out[25] = frequency;
-    Rcpp::CharacterVector names(26);
+    out[11] = lambda;
+    out[12] = gamma;
+    out[13] = eta;
+    out[14] = delta;
+    out[15] = sigma_b;
+    out[16] = sigma_nu;
+    out[17] = k;
+    out[18] = converged;
+    out[19] = steps_to_equilibrium;
+    out[20] = final_distance;
+    out[21] = island;
+    out[22] = trait_id;
+    out[23] = trait_column;
+    out[24] = trait_layer;
+    out[25] = is_base_layer;
+    out[26] = frequency;
+    Rcpp::CharacterVector names(27);
     names[0] = "run_id";
     names[1] = "seed";
     names[2] = "columns";
@@ -689,21 +711,22 @@ Rcpp::DataFrame traits_df_from_rows(const std::vector<TraitRow>& rows) {
     names[8] = "mu";
     names[9] = "alpha";
     names[10] = "beta";
-    names[11] = "gamma";
-    names[12] = "eta";
-    names[13] = "delta";
-    names[14] = "sigma_b";
-    names[15] = "sigma_nu";
-    names[16] = "k";
-    names[17] = "converged";
-    names[18] = "steps_to_equilibrium";
-    names[19] = "final_distance";
-    names[20] = "island";
-    names[21] = "trait_id";
-    names[22] = "trait_column";
-    names[23] = "trait_layer";
-    names[24] = "is_base_layer";
-    names[25] = "frequency";
+    names[11] = "lambda";
+    names[12] = "gamma";
+    names[13] = "eta";
+    names[14] = "delta";
+    names[15] = "sigma_b";
+    names[16] = "sigma_nu";
+    names[17] = "k";
+    names[18] = "converged";
+    names[19] = "steps_to_equilibrium";
+    names[20] = "final_distance";
+    names[21] = "island";
+    names[22] = "trait_id";
+    names[23] = "trait_column";
+    names[24] = "trait_layer";
+    names[25] = "is_base_layer";
+    names[26] = "frequency";
     out.attr("names") = names;
     out.attr("class") = "data.frame";
     out.attr("row.names") = Rcpp::IntegerVector::create(NA_INTEGER, -n);
@@ -715,9 +738,9 @@ Rcpp::DataFrame time_df_from_rows(const std::vector<TimeRow>& rows) {
 
     Rcpp::NumericVector run_id(n), seed(n);
     Rcpp::IntegerVector columns(n), layers(n), cross_column_depth(n), island_count(n), converged(n),
-        steps_to_equilibrium(n), step(n);
-    Rcpp::NumericVector m(n), rho(n), mu(n), alpha(n), beta(n), gamma(n), eta(n), delta(n), sigma_b(n), sigma_nu(n), k(n),
-        final_distance(n), f_rep(n), within_distance(n), total_distance(n), mean_payoff(n), adj_payoff(n),
+        steps_to_equilibrium(n), step(n), divergence_pair_count(n);
+    Rcpp::NumericVector m(n), rho(n), mu(n), alpha(n), beta(n), lambda(n), gamma(n), eta(n), delta(n), sigma_b(n), sigma_nu(n), k(n),
+        final_distance(n), adaptive_divergence(n), cultural_divergence(n), mean_payoff(n), adj_payoff(n),
         mean_max_depth(n), mean_depth(n), eff_column(n),
         top_col_mass(n), mean_rep_size(n), empty_rep_size(n);
 
@@ -734,6 +757,7 @@ Rcpp::DataFrame time_df_from_rows(const std::vector<TimeRow>& rows) {
         mu[i] = row.mu;
         alpha[i] = row.alpha;
         beta[i] = row.beta;
+        lambda[i] = row.lambda;
         gamma[i] = row.gamma;
         eta[i] = row.eta;
         delta[i] = row.delta;
@@ -744,9 +768,9 @@ Rcpp::DataFrame time_df_from_rows(const std::vector<TimeRow>& rows) {
         steps_to_equilibrium[i] = static_cast<int>(row.steps_to_equilibrium);
         final_distance[i] = row.final_distance;
         step[i] = static_cast<int>(row.step);
-        f_rep[i] = row.f_rep;
-        within_distance[i] = row.within_distance;
-        total_distance[i] = row.total_distance;
+        adaptive_divergence[i] = row.adaptive_divergence;
+        cultural_divergence[i] = row.cultural_divergence;
+        divergence_pair_count[i] = static_cast<int>(row.divergence_pair_count);
         mean_payoff[i] = row.mean_payoff;
         adj_payoff[i] = row.adj_payoff;
         mean_max_depth[i] = row.mean_max_depth;
@@ -757,7 +781,7 @@ Rcpp::DataFrame time_df_from_rows(const std::vector<TimeRow>& rows) {
         empty_rep_size[i] = row.empty_rep_size;
     }
 
-    Rcpp::List out(32);
+    Rcpp::List out(33);
     out[0] = run_id;
     out[1] = seed;
     out[2] = columns;
@@ -769,28 +793,29 @@ Rcpp::DataFrame time_df_from_rows(const std::vector<TimeRow>& rows) {
     out[8] = mu;
     out[9] = alpha;
     out[10] = beta;
-    out[11] = gamma;
-    out[12] = eta;
-    out[13] = delta;
-    out[14] = sigma_b;
-    out[15] = sigma_nu;
-    out[16] = k;
-    out[17] = converged;
-    out[18] = steps_to_equilibrium;
-    out[19] = final_distance;
-    out[20] = step;
-    out[21] = f_rep;
-    out[22] = within_distance;
-    out[23] = total_distance;
-    out[24] = mean_payoff;
-    out[25] = adj_payoff;
-    out[26] = mean_max_depth;
-    out[27] = mean_depth;
-    out[28] = eff_column;
-    out[29] = top_col_mass;
-    out[30] = mean_rep_size;
-    out[31] = empty_rep_size;
-    Rcpp::CharacterVector names(32);
+    out[11] = lambda;
+    out[12] = gamma;
+    out[13] = eta;
+    out[14] = delta;
+    out[15] = sigma_b;
+    out[16] = sigma_nu;
+    out[17] = k;
+    out[18] = converged;
+    out[19] = steps_to_equilibrium;
+    out[20] = final_distance;
+    out[21] = step;
+    out[22] = adaptive_divergence;
+    out[23] = cultural_divergence;
+    out[24] = divergence_pair_count;
+    out[25] = mean_payoff;
+    out[26] = adj_payoff;
+    out[27] = mean_max_depth;
+    out[28] = mean_depth;
+    out[29] = eff_column;
+    out[30] = top_col_mass;
+    out[31] = mean_rep_size;
+    out[32] = empty_rep_size;
+    Rcpp::CharacterVector names(33);
     names[0] = "run_id";
     names[1] = "seed";
     names[2] = "columns";
@@ -802,27 +827,28 @@ Rcpp::DataFrame time_df_from_rows(const std::vector<TimeRow>& rows) {
     names[8] = "mu";
     names[9] = "alpha";
     names[10] = "beta";
-    names[11] = "gamma";
-    names[12] = "eta";
-    names[13] = "delta";
-    names[14] = "sigma_b";
-    names[15] = "sigma_nu";
-    names[16] = "k";
-    names[17] = "converged";
-    names[18] = "steps_to_equilibrium";
-    names[19] = "final_distance";
-    names[20] = "step";
-    names[21] = "f_rep";
-    names[22] = "within_distance";
-    names[23] = "total_distance";
-    names[24] = "mean_payoff";
-    names[25] = "adj_payoff";
-    names[26] = "mean_max_depth";
-    names[27] = "mean_depth";
-    names[28] = "eff_column";
-    names[29] = "top_col_mass";
-    names[30] = "mean_rep_size";
-    names[31] = "empty_rep_size";
+    names[11] = "lambda";
+    names[12] = "gamma";
+    names[13] = "eta";
+    names[14] = "delta";
+    names[15] = "sigma_b";
+    names[16] = "sigma_nu";
+    names[17] = "k";
+    names[18] = "converged";
+    names[19] = "steps_to_equilibrium";
+    names[20] = "final_distance";
+    names[21] = "step";
+    names[22] = "adaptive_divergence";
+    names[23] = "cultural_divergence";
+    names[24] = "divergence_pair_count";
+    names[25] = "mean_payoff";
+    names[26] = "adj_payoff";
+    names[27] = "mean_max_depth";
+    names[28] = "mean_depth";
+    names[29] = "eff_column";
+    names[30] = "top_col_mass";
+    names[31] = "mean_rep_size";
+    names[32] = "empty_rep_size";
     out.attr("names") = names;
     out.attr("class") = "data.frame";
     out.attr("row.names") = Rcpp::IntegerVector::create(NA_INTEGER, -n);
@@ -995,22 +1021,23 @@ Rcpp::List im_run_model_cpp(Rcpp::DataFrame runs,
     }
 
     std::vector<RunOutcome> outcomes(configs.size());
-    const bool parallelize_single_run_by_island =
-        configs.size() == 1 && configs.front().m == 0.0;
 
     #ifdef _OPENMP
     const int old_threads = omp_get_max_threads();
+    int effective_thread_count = old_threads;
     if (threads.isNotNull()) {
         const int thread_count = Rcpp::as<int>(threads);
         if (thread_count <= 0) {
             throw std::invalid_argument("threads must be > 0");
         }
+        effective_thread_count = thread_count;
         omp_set_num_threads(thread_count);
     }
+    #else
+    const int effective_thread_count = 1;
     #endif
 
-    #pragma omp parallel for schedule(dynamic) if(!parallelize_single_run_by_island)
-    for (std::int64_t i = 0; i < static_cast<std::int64_t>(configs.size()); ++i) {
+    const auto execute_run = [&](std::size_t i, bool allow_interrupts) {
         const auto& cfg = configs[static_cast<std::size_t>(i)];
         auto& outcome = outcomes[static_cast<std::size_t>(i)];
 
@@ -1033,8 +1060,8 @@ Rcpp::List im_run_model_cpp(Rcpp::DataFrame runs,
                 .mu = cfg.mu,
                 .alpha = cfg.alpha,
                 .beta = cfg.beta,
-                .gamma = cfg.gamma
-                ,
+                .lambda = cfg.lambda,
+                .gamma = cfg.gamma,
                 .eta = cfg.eta
             };
             const im::PayoffParams payoff_params{
@@ -1054,7 +1081,10 @@ Rcpp::List im_run_model_cpp(Rcpp::DataFrame runs,
                 tolerance,
                 0,
                 {},
-                static_cast<std::size_t>(bookkeeping_interval)
+                static_cast<std::size_t>(bookkeeping_interval),
+                allow_interrupts
+                    ? std::function<void(std::size_t)>{[](std::size_t) { Rcpp::checkUserInterrupt(); }}
+                    : std::function<void(std::size_t)>{}
             );
 
             const auto meta = metadata_from_config(cfg, eq);
@@ -1062,8 +1092,33 @@ Rcpp::List im_run_model_cpp(Rcpp::DataFrame runs,
                 collect_equilibrium_rows(meta, eq.state, *states, payoff, frequency_threshold);
             outcome.time_rows = collect_time_rows(meta, eq.bookkeeping);
             outcome.trait_rows = collect_trait_rows(meta, eq.state, *states);
+        } catch (const Rcpp::internal::InterruptedException&) {
+            throw;
         } catch (const std::exception& e) {
             outcome.error = e.what();
+        }
+    };
+
+    if (configs.size() == 1 || effective_thread_count <= 1) {
+        for (std::size_t i = 0; i < configs.size(); ++i) {
+            Rcpp::checkUserInterrupt();
+            execute_run(i, true);
+        }
+    } else {
+        const std::size_t batch_size = static_cast<std::size_t>(effective_thread_count);
+
+        for (std::size_t batch_begin = 0; batch_begin < configs.size(); batch_begin += batch_size) {
+            Rcpp::checkUserInterrupt();
+
+            const std::size_t batch_end =
+                std::min(batch_begin + batch_size, configs.size());
+
+            #pragma omp parallel for schedule(dynamic)
+            for (std::int64_t i = static_cast<std::int64_t>(batch_begin);
+                 i < static_cast<std::int64_t>(batch_end);
+                 ++i) {
+                execute_run(static_cast<std::size_t>(i), false);
+            }
         }
     }
 
