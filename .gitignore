@@ -1,0 +1,7 @@
+.vscode/
+build/
+*.docx
+.clangd
+*.csv
+*.rds
+*.png

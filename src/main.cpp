@@ -1,9 +1,10 @@
 #include <cstdint>
+#include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iostream>
 #include <memory>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -21,12 +22,131 @@
 
 namespace im = island_model;
 
+namespace {
+
+[[nodiscard]] std::filesystem::path make_temp_results_dir() {
+    const auto output_root = std::filesystem::current_path().parent_path();
+    const auto timestamp =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count();
+
+    for (int attempt = 0; attempt < 1000; ++attempt) {
+        auto dir = output_root / (
+            "island_model_results_tmp_"
+            + std::to_string(timestamp)
+            + "_"
+            + std::to_string(attempt));
+        if (std::filesystem::create_directory(dir)) {
+            return dir;
+        }
+    }
+
+    throw std::runtime_error("Failed to create temporary results directory");
+}
+
+[[nodiscard]] std::filesystem::path run_fragment_path(const std::filesystem::path& temp_dir,
+                                                      const std::string& stem,
+                                                      std::size_t run_index) {
+    return temp_dir / (stem + "_" + std::to_string(run_index) + ".csv");
+}
+
+[[nodiscard]] std::ofstream open_output_file(const std::filesystem::path& path) {
+    std::ofstream file(path);
+    if (!file) {
+        throw std::runtime_error("Failed to open " + path.string());
+    }
+    return file;
+}
+
+void append_file_contents(std::ostream& output, const std::filesystem::path& path) {
+    std::ifstream input(path);
+    if (!input) {
+        throw std::runtime_error("Failed to open temporary result " + path.string());
+    }
+
+    output << input.rdbuf();
+    if (!output) {
+        throw std::runtime_error("Failed while writing combined result from " + path.string());
+    }
+    if (input.bad()) {
+        throw std::runtime_error("Failed while reading temporary result " + path.string());
+    }
+}
+
+void write_equilibrium_failure_row(std::ostream& out, const im::RunConfig& cfg) {
+    out << cfg.run_id << ','
+        << cfg.seed << ','
+        << cfg.columns << ','
+        << cfg.layers << ','
+        << cfg.cross_column_depth << ','
+        << cfg.island_count << ','
+        << cfg.m << ','
+        << cfg.rho << ','
+        << cfg.mu << ','
+        << cfg.alpha << ','
+        << cfg.beta << ','
+        << cfg.lambda << ','
+        << cfg.gamma << ','
+        << cfg.eta << ','
+        << cfg.delta << ','
+        << cfg.sigma_b << ','
+        << cfg.sigma_nu << ','
+        << cfg.k << ','
+        << 0 << ','
+        << 0 << ','
+        << -1.0 << ','
+        << 0 << ','
+        << 0 << ','
+        << 0.0 << ','
+        << 0 << ','
+        << 0 << ','
+        << 0.0 << ','
+        << 0.0 << ','
+        << 0.0 << ','
+        << 0.0 << ','
+        << 0.0 << ','
+        << 0.0 << '\n';
+}
+
+void write_trait_failure_row(std::ostream& out, const im::RunConfig& cfg) {
+    out << cfg.run_id << ','
+        << cfg.seed << ','
+        << cfg.columns << ','
+        << cfg.layers << ','
+        << cfg.cross_column_depth << ','
+        << cfg.island_count << ','
+        << cfg.m << ','
+        << cfg.rho << ','
+        << cfg.mu << ','
+        << cfg.alpha << ','
+        << cfg.beta << ','
+        << cfg.lambda << ','
+        << cfg.gamma << ','
+        << cfg.eta << ','
+        << cfg.delta << ','
+        << cfg.sigma_b << ','
+        << cfg.sigma_nu << ','
+        << cfg.k << ','
+        << 0 << ','
+        << 0 << ','
+        << -1.0 << ','
+        << 0 << ','
+        << 0 << ','
+        << 0 << ','
+        << 0 << ','
+        << 1 << ','
+        << 0.0 << '\n';
+}
+
+} // namespace
+
 int main(int argc, char* argv[]) {
     try {
         const bool logging_enabled =
             argc > 1 && std::string(argv[1]) == "1";
 
-        const auto grid = im::make_test_grid();
+        const auto grid = im::make_default_grid();
         const auto runs = im::make_parameter_combinations(grid);
 
         struct LatticeConfigKey {
@@ -94,17 +214,20 @@ int main(int argc, char* argv[]) {
                 ));
         }
 
-        std::vector<std::string> csv_rows(runs.size());
-        std::vector<std::string> trait_csv_rows(runs.size());
-        std::vector<std::string> bookkeeping_rows(runs.size());
+        const auto temp_results_dir = make_temp_results_dir();
         const bool parallelize_single_run_by_island =
             runs.size() == 1 && runs.front().m == 0.0;
 
         #pragma omp parallel for schedule(dynamic) if(!parallelize_single_run_by_island)
         for (std::int64_t i = 0; i < static_cast<std::int64_t>(runs.size()); ++i) {
-            const auto& cfg = runs[static_cast<std::size_t>(i)];
-
-            std::ostringstream out;
+            const auto run_index = static_cast<std::size_t>(i);
+            const auto& cfg = runs[run_index];
+            const auto equilibrium_path =
+                run_fragment_path(temp_results_dir, "equilibrium", run_index);
+            const auto trait_path =
+                run_fragment_path(temp_results_dir, "trait_equilibrium", run_index);
+            const auto bookkeeping_path =
+                run_fragment_path(temp_results_dir, "time_bookkeeping", run_index);
 
             try {
                 const im::Lattice lattice(cfg.columns, cfg.layers, cfg.cross_column_depth);
@@ -195,6 +318,7 @@ int main(int argc, char* argv[]) {
                     .final_distance = eq.final_distance
                 };
 
+                auto out = open_output_file(equilibrium_path);
                 im::EquilibriumCsvWriter::write_rows(
                     out,
                     meta,
@@ -204,98 +328,43 @@ int main(int argc, char* argv[]) {
                     1e-6
                 );
 
-                std::ostringstream trait_out;
+                auto trait_out = open_output_file(trait_path);
                 im::TraitEquilibriumCsvWriter::write_rows(
                     trait_out,
                     meta,
                     eq.state,
                     *states
                 );
-                trait_csv_rows[static_cast<std::size_t>(i)] = trait_out.str();
 
-                std::ostringstream bookkeeping_out;
+                auto bookkeeping_out = open_output_file(bookkeeping_path);
                 im::TimeBookkeepingCsvWriter::write_rows(
                     bookkeeping_out,
                     meta,
                     eq.bookkeeping
                 );
-                bookkeeping_rows[static_cast<std::size_t>(i)] = bookkeeping_out.str();
             } catch (const std::exception& e) {
-                std::ostringstream err;
-                err << cfg.run_id << ','
-                    << cfg.seed << ','
-                    << cfg.columns << ','
-                    << cfg.layers << ','
-                    << cfg.cross_column_depth << ','
-                    << cfg.island_count << ','
-                    << cfg.m << ','
-                    << cfg.rho << ','
-                    << cfg.mu << ','
-                    << cfg.alpha << ','
-                    << cfg.beta << ','
-                    << cfg.lambda << ','
-                    << cfg.gamma << ','
-                    << cfg.eta << ','
-                    << cfg.delta << ','
-                    << cfg.sigma_b << ','
-                    << cfg.sigma_nu << ','
-                    << cfg.k << ','
-                    << 0 << ','
-                    << 0 << ','
-                    << -1.0 << ','
-                    << 0 << ','
-                    << 0 << ','
-                    << 0.0 << ','
-                    << 0 << ','
-                    << 0 << ','
-                    << 0.0 << ','
-                    << 0.0 << ','
-                    << 0.0 << ','
-                    << 0.0 << ','
-                    << 0.0 << ','
-                    << 0.0 << '\n';
+                try {
+                    auto out = open_output_file(equilibrium_path);
+                    write_equilibrium_failure_row(out, cfg);
 
-                out.str({});
-                out.clear();
-                out << err.str();
+                    auto trait_out = open_output_file(trait_path);
+                    write_trait_failure_row(trait_out, cfg);
 
-                std::ostringstream trait_err;
-                trait_err << cfg.run_id << ','
-                          << cfg.seed << ','
-                          << cfg.columns << ','
-                          << cfg.layers << ','
-                          << cfg.cross_column_depth << ','
-                          << cfg.island_count << ','
-                          << cfg.m << ','
-                          << cfg.rho << ','
-                          << cfg.mu << ','
-                          << cfg.alpha << ','
-                          << cfg.beta << ','
-                          << cfg.lambda << ','
-                          << cfg.gamma << ','
-                          << cfg.eta << ','
-                          << cfg.delta << ','
-                          << cfg.sigma_b << ','
-                          << cfg.sigma_nu << ','
-                          << cfg.k << ','
-                          << 0 << ','
-                          << 0 << ','
-                          << -1.0 << ','
-                          << 0 << ','
-                          << 0 << ','
-                          << 0 << ','
-                          << 0 << ','
-                          << 1 << ','
-                          << 0.0 << '\n';
-                trait_csv_rows[static_cast<std::size_t>(i)] = trait_err.str();
+                    auto bookkeeping_out = open_output_file(bookkeeping_path);
+                } catch (const std::exception& write_error) {
+                    #pragma omp critical
+                    {
+                        std::cerr << "Run " << cfg.run_id
+                                  << " failed to write temporary result: "
+                                  << write_error.what() << '\n';
+                    }
+                }
 
                 #pragma omp critical
                 {
                     std::cerr << "Run " << cfg.run_id << " failed: " << e.what() << '\n';
                 }
             }
-
-            csv_rows[static_cast<std::size_t>(i)] = out.str();
         }
 
         std::ofstream file("../equilibrium_distribution.csv");
@@ -304,8 +373,8 @@ int main(int argc, char* argv[]) {
         }
 
         im::EquilibriumCsvWriter::write_header(file);
-        for (const auto& rows : csv_rows) {
-            file << rows;
+        for (std::size_t i = 0; i < runs.size(); ++i) {
+            append_file_contents(file, run_fragment_path(temp_results_dir, "equilibrium", i));
         }
 
         std::ofstream trait_file("../equilibrium_trait_distribution.csv");
@@ -314,8 +383,8 @@ int main(int argc, char* argv[]) {
         }
 
         im::TraitEquilibriumCsvWriter::write_header(trait_file);
-        for (const auto& rows : trait_csv_rows) {
-            trait_file << rows;
+        for (std::size_t i = 0; i < runs.size(); ++i) {
+            append_file_contents(trait_file, run_fragment_path(temp_results_dir, "trait_equilibrium", i));
         }
 
         std::ofstream bookkeeping_file("../time_bookkeeping.csv");
@@ -324,8 +393,15 @@ int main(int argc, char* argv[]) {
         }
 
         im::TimeBookkeepingCsvWriter::write_header(bookkeeping_file);
-        for (const auto& rows : bookkeeping_rows) {
-            bookkeeping_file << rows;
+        for (std::size_t i = 0; i < runs.size(); ++i) {
+            append_file_contents(bookkeeping_file, run_fragment_path(temp_results_dir, "time_bookkeeping", i));
+        }
+
+        std::error_code remove_error;
+        std::filesystem::remove_all(temp_results_dir, remove_error);
+        if (remove_error) {
+            std::cerr << "Warning: failed to remove temporary results directory "
+                      << temp_results_dir << ": " << remove_error.message() << '\n';
         }
 
         return 0;
