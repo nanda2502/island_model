@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <cstdint>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -10,6 +12,8 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <omp.h>
 
 #include "config/default_grid.hpp"
 #include "config/parameter_grid.hpp"
@@ -139,6 +143,40 @@ void write_trait_failure_row(std::ostream& out, const im::RunConfig& cfg) {
         << 0.0 << '\n';
 }
 
+[[nodiscard]] int run_parallelism_for_repertoire_count(std::size_t repertoire_count) {
+    const int max_threads = std::max(1, omp_get_max_threads());
+
+    if (repertoire_count < 100'000) {
+        return max_threads;
+    }
+    if (repertoire_count < 500'000) {
+        return std::min(max_threads, 64);
+    }
+    if (repertoire_count < 1'000'000) {
+        return std::min(max_threads, 32);
+    }
+    if (repertoire_count < 3'000'000) {
+        return std::min(max_threads, 8);
+    }
+
+    return 1;
+}
+
+[[nodiscard]] int configured_parallel_run_count(std::size_t max_repertoire_count) {
+    if (const char* value = std::getenv("ISLAND_MODEL_MAX_PARALLEL_RUNS")) {
+        char* end = nullptr;
+        const long parsed = std::strtol(value, &end, 10);
+        if (end != value && *end == '\0' && parsed > 0) {
+            return static_cast<int>(parsed);
+        }
+
+        std::cerr << "Warning: ignoring invalid ISLAND_MODEL_MAX_PARALLEL_RUNS="
+                  << value << '\n';
+    }
+
+    return run_parallelism_for_repertoire_count(max_repertoire_count);
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -173,6 +211,7 @@ int main(int argc, char* argv[]) {
 
         std::unordered_map<LatticeConfigKey, reachable_states_ptr, LatticeConfigKeyHash> reachable_states_cache;
         reachable_states_cache.reserve(runs.size());
+        std::size_t max_repertoire_count = 0;
 
         for (const auto& cfg : runs) {
             const LatticeConfigKey key{
@@ -203,22 +242,34 @@ int main(int argc, char* argv[]) {
                               << ", frontier " << frontier_size << '\n';
                 };
 
+            auto states = std::make_shared<im::ReachableStates>(
+                lattice,
+                logging_enabled ? 100 : 0,
+                logging_enabled
+                    ? im::ReachableStates::build_progress_callback_type(log_reachable_states_progress)
+                    : im::ReachableStates::build_progress_callback_type{}
+            );
+            max_repertoire_count = std::max(max_repertoire_count, states->size());
+
             reachable_states_cache.emplace(
                 key,
-                std::make_shared<im::ReachableStates>(
-                    lattice,
-                    logging_enabled ? 100 : 0,
-                    logging_enabled
-                        ? im::ReachableStates::build_progress_callback_type(log_reachable_states_progress)
-                        : im::ReachableStates::build_progress_callback_type{}
-                ));
+                std::move(states));
         }
 
         const auto temp_results_dir = make_temp_results_dir();
         const bool parallelize_single_run_by_island =
             runs.size() == 1 && runs.front().m == 0.0;
+        const int parallel_run_count =
+            configured_parallel_run_count(max_repertoire_count);
+        const bool parallelize_runs =
+            !parallelize_single_run_by_island && parallel_run_count > 1;
 
-        #pragma omp parallel for schedule(dynamic) if(!parallelize_single_run_by_island)
+        std::cout << "Max reachable repertoires: " << max_repertoire_count
+                  << "; parallel runs: "
+                  << (parallelize_runs ? parallel_run_count : 1)
+                  << '\n';
+
+        #pragma omp parallel for schedule(dynamic) if(parallelize_runs) num_threads(parallel_run_count)
         for (std::int64_t i = 0; i < static_cast<std::int64_t>(runs.size()); ++i) {
             const auto run_index = static_cast<std::size_t>(i);
             const auto& cfg = runs[run_index];

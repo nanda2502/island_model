@@ -15,8 +15,8 @@ source("island_model_plotting.R")
 
 runs <- expand.grid(
     "seed" = c(12345),                        
-    "columns" = c(4),                  
-    "layers" = c(6),
+    "columns" = c(24),                  
+    "layers" = c(1),
     "cross_column_depth" = c(1),       # max layer at which there should be incoming diagonal edges (1 for none) 
     "island_count" = c(10),
     "m" = c(0.01, 0.1, 0.3),           # migration rate (0 for no migration, 1 for complete mixing)
