@@ -260,8 +260,9 @@ std::size_t get_required_count(const Rcpp::DataFrame& runs) {
 }
 
 std::size_t resolve_cross_column_depth(int cross_column_depth, int layers) {
+    static_cast<void>(layers);
     return cross_column_depth < 0
-        ? static_cast<std::size_t>(layers)
+        ? std::size_t{1}
         : static_cast<std::size_t>(cross_column_depth);
 }
 

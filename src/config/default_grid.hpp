@@ -14,7 +14,7 @@ inline ParameterGrid make_default_grid() {
     grid.columns = {4};
     grid.layers = {6};
     grid.cross_column_depths = {1};
-    grid.strictnesses = {1.0};
+    grid.strictnesses = {0.0, 1.0};
     
     
     // Migration
@@ -55,7 +55,7 @@ inline ParameterGrid make_test_grid() {
     // Lattice structure
     grid.columns = {4};
     grid.layers = {6};
-    grid.cross_column_depths = {6};
+    grid.cross_column_depths = {1};
     grid.island_counts = {10};
     grid.seeds = {12345};
     grid.strictnesses = {1.0};

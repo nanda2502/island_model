@@ -101,7 +101,7 @@ inline void validate_grid(const ParameterGrid &grid) {
       cfg.island_count == 0) {
     return false;
   }
-  if (cfg.cross_column_depth > cfg.layers)
+  if (cfg.cross_column_depth != 1)
     return false;
   if (cfg.strictness != 0.0 && cfg.strictness != 1.0)
     return false;

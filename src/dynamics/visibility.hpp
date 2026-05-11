@@ -57,7 +57,7 @@ public:
 
 private:
     [[nodiscard]] std::size_t index(IslandId island, TraitId trait) const noexcept {
-        return static_cast<std::size_t>(island) * lattice_.trait_count()
+        return (static_cast<std::size_t>(island) * lattice_.trait_count())
              + static_cast<std::size_t>(trait);
     }
 
@@ -73,9 +73,9 @@ private:
         }
     }
 
-    lattice_type lattice_{};
+    lattice_type lattice_;
     std::size_t island_count_{0};
-    std::vector<double> values_{};
+    std::vector<double> values_;
 };
 
 class Visibility {
@@ -135,7 +135,9 @@ public:
 
                 const std::size_t flat_index = index(island, state, state_count);
                 repertoire_weights[flat_index] =
-                    mass * std::pow(payoff_cache.payoff_sum(island, state), lambda);
+                    lambda == 0.0
+                        ? mass
+                        : mass * std::pow(payoff_cache.payoff_sum(island, state), lambda);
             }
         }
 
@@ -192,7 +194,7 @@ private:
     [[nodiscard]] static std::size_t index(IslandId island,
                                            StateId state,
                                            std::size_t state_count) noexcept {
-        return static_cast<std::size_t>(island) * state_count
+        return (static_cast<std::size_t>(island) * state_count)
              + static_cast<std::size_t>(state);
     }
 };

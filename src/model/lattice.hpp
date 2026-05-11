@@ -22,7 +22,7 @@ public:
 
     Lattice(std::size_t columns,
             std::size_t layers,
-            std::size_t cross_column_depth = std::numeric_limits<std::size_t>::max())
+            std::size_t cross_column_depth = 1)
         : columns_(columns),
           layers_(layers),
           cross_column_depth_(checked_cross_column_depth(cross_column_depth, layers)),
@@ -151,10 +151,13 @@ private:
     static std::size_t checked_cross_column_depth(std::size_t cross_column_depth,
                                                   std::size_t layers) {
         if (cross_column_depth == std::numeric_limits<std::size_t>::max()) {
-            return layers;
+            return 1;
         }
         if (cross_column_depth == 0) {
             throw std::invalid_argument("Lattice: cross_column_depth must be > 0");
+        }
+        if (cross_column_depth != 1) {
+            throw std::invalid_argument("Lattice: cross_column_depth is fixed at 1");
         }
         if (cross_column_depth > layers) {
             throw std::invalid_argument("Lattice: cross_column_depth must be <= layers");

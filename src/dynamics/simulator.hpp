@@ -70,7 +70,7 @@ public:
         if (states_->lattice() != payoff_.lattice()) {
             throw std::invalid_argument("Simulator: state space/payoff lattice mismatch");
         }
-        payoff_cache_ = repertoire_payoff_cache_type(*states_, payoff_, params_.beta);
+        payoff_cache_ = repertoire_payoff_cache_type(*states_, payoff_, params_.beta, params_.lambda);
     }
 
     Simulator(reachable_states_type states,

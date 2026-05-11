@@ -1,10 +1,12 @@
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -18,6 +20,8 @@
 #include "io/write_equilibrium_csv.hpp"
 #include "io/write_run_parameters_csv.hpp"
 #include "io/write_time_bookkeeping_csv.hpp"
+#include "model/lattice.hpp"
+#include "model/payoff_landscape.hpp"
 #include "state_space/reachable_states.hpp"
 
 namespace im = island_model;
@@ -152,38 +156,127 @@ void write_run_parameters_failure_row(std::ostream& out,
     im::RunParametersCsvWriter::write_row(out, meta);
 }
 
-[[nodiscard]] int run_parallelism_for_repertoire_count(std::size_t repertoire_count) {
-    const int max_threads = std::max(1, omp_get_max_threads());
-
-    if (repertoire_count < 100'000) {
-        return max_threads;
-    }
-    if (repertoire_count < 500'000) {
-        return std::min(max_threads, 64);
-    }
-    if (repertoire_count < 1'000'000) {
-        return std::min(max_threads, 32);
-    }
-    if (repertoire_count < 3'000'000) {
-        return std::min(max_threads, 8);
+[[nodiscard]] bool dense_payoff_cache_enabled() {
+    const char* value = std::getenv("ISLAND_MODEL_DENSE_PAYOFF_CACHE");
+    if (value == nullptr) {
+        return true;
     }
 
-    return 1;
+    const std::string flag(value);
+    return flag != "0" && flag != "false" && flag != "FALSE"
+        && flag != "off" && flag != "OFF";
 }
 
-[[nodiscard]] int configured_parallel_run_count(std::size_t max_repertoire_count) {
+[[nodiscard]] std::uint64_t parse_positive_u64_env(const char* name) {
+    if (const char* value = std::getenv(name)) {
+        char* end = nullptr;
+        const auto parsed = std::strtoull(value, &end, 10);
+        if (end != value && *end == '\0' && parsed > 0) {
+            return static_cast<std::uint64_t>(parsed);
+        }
+
+        std::cerr << "Warning: ignoring invalid " << name << "="
+                  << value << '\n';
+    }
+
+    return 0;
+}
+
+[[nodiscard]] double parse_memory_fraction() {
+    if (const char* value = std::getenv("ISLAND_MODEL_MEMORY_FRACTION")) {
+        char* end = nullptr;
+        const double parsed = std::strtod(value, &end);
+        if (end != value && *end == '\0' && parsed > 0.0 && parsed <= 1.0) {
+            return parsed;
+        }
+
+        std::cerr << "Warning: ignoring invalid ISLAND_MODEL_MEMORY_FRACTION="
+                  << value << '\n';
+    }
+
+    return 0.80;
+}
+
+[[nodiscard]] std::uint64_t configured_memory_budget_bytes() {
+    constexpr std::uint64_t mib = 1024ULL * 1024ULL;
+    constexpr std::uint64_t gib = 1024ULL * mib;
+
+    if (const auto memory_gib = parse_positive_u64_env("ISLAND_MODEL_MEMORY_GIB")) {
+        return memory_gib * gib;
+    }
+    if (const auto slurm_mem_mb = parse_positive_u64_env("SLURM_MEM_PER_NODE")) {
+        return slurm_mem_mb * mib;
+    }
+    if (const auto slurm_mem_per_cpu_mb = parse_positive_u64_env("SLURM_MEM_PER_CPU")) {
+        const auto threads = static_cast<std::uint64_t>(std::max(1, omp_get_max_threads()));
+        return slurm_mem_per_cpu_mb * threads * mib;
+    }
+
+    return 384ULL * gib;
+}
+
+[[nodiscard]] std::uint64_t saturating_multiply(std::uint64_t a, std::uint64_t b) {
+    if (a != 0 && b > std::numeric_limits<std::uint64_t>::max() / a) {
+        return std::numeric_limits<std::uint64_t>::max();
+    }
+    return a * b;
+}
+
+[[nodiscard]] std::uint64_t estimate_run_memory_bytes(const im::RunConfig& cfg,
+                                                      std::size_t state_count,
+                                                      bool dense_payoff_cache) {
+    constexpr std::uint64_t double_bytes = sizeof(double);
+    constexpr std::uint64_t overhead_bytes = 1024ULL * 1024ULL * 1024ULL;
+
+    const auto island_count = static_cast<std::uint64_t>(cfg.island_count);
+    const auto states = static_cast<std::uint64_t>(state_count);
+    const auto population_bytes =
+        saturating_multiply(saturating_multiply(island_count, states), double_bytes);
+
+    // Current, migrated, next, and Visibility::repertoire_weights can coexist.
+    std::uint64_t estimate = saturating_multiply(population_bytes, 4);
+
+    if (dense_payoff_cache) {
+        estimate += population_bytes; // expression-bias denominator table.
+        if (cfg.lambda != 0.0) {
+            estimate += population_bytes; // payoff-sum table.
+        }
+    }
+
+    return estimate + overhead_bytes;
+}
+
+[[nodiscard]] int configured_parallel_run_count(std::uint64_t max_estimated_run_memory_bytes,
+                                                std::size_t run_count) {
+    const int max_threads = std::max(1, omp_get_max_threads());
+
     if (const char* value = std::getenv("ISLAND_MODEL_MAX_PARALLEL_RUNS")) {
         char* end = nullptr;
         const long parsed = std::strtol(value, &end, 10);
         if (end != value && *end == '\0' && parsed > 0) {
-            return static_cast<int>(parsed);
+            return std::min({static_cast<int>(parsed), max_threads, static_cast<int>(run_count)});
         }
 
         std::cerr << "Warning: ignoring invalid ISLAND_MODEL_MAX_PARALLEL_RUNS="
                   << value << '\n';
     }
 
-    return run_parallelism_for_repertoire_count(max_repertoire_count);
+    if (max_estimated_run_memory_bytes == 0) {
+        return 1;
+    }
+
+    const double usable_memory =
+        static_cast<double>(configured_memory_budget_bytes()) * parse_memory_fraction();
+    const auto memory_limited_runs =
+        static_cast<int>(std::max(1.0, usable_memory / static_cast<double>(max_estimated_run_memory_bytes)));
+
+    return std::max(
+        1,
+        std::min({max_threads, memory_limited_runs, static_cast<int>(run_count)}));
+}
+
+[[nodiscard]] double gib(std::uint64_t bytes) {
+    return static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0);
 }
 
 } // namespace
@@ -226,6 +319,8 @@ int main(int argc, char* argv[]) {
         std::unordered_map<LatticeConfigKey, reachable_states_ptr, LatticeConfigKeyHash> reachable_states_cache;
         reachable_states_cache.reserve(runs.size());
         std::size_t max_repertoire_count = 0;
+        std::uint64_t max_estimated_run_memory_bytes = 0;
+        const bool dense_payoff_cache = dense_payoff_cache_enabled();
 
         for (const auto& cfg : runs) {
             const LatticeConfigKey key{
@@ -274,15 +369,35 @@ int main(int argc, char* argv[]) {
                 std::move(states));
         }
 
+        for (const auto& cfg : runs) {
+            const LatticeConfigKey key{
+                .columns = cfg.columns,
+                .layers = cfg.layers,
+                .cross_column_depth = cfg.cross_column_depth,
+                .strictness = cfg.strictness
+            };
+            const auto states_it = reachable_states_cache.find(key);
+            if (states_it == reachable_states_cache.end()) {
+                throw std::logic_error("Missing reachable states cache entry for memory estimate");
+            }
+
+            max_estimated_run_memory_bytes = std::max(
+                max_estimated_run_memory_bytes,
+                estimate_run_memory_bytes(cfg, states_it->second->size(), dense_payoff_cache));
+        }
+
         const auto temp_results_dir = make_temp_results_dir();
         const bool parallelize_single_run_by_island =
             runs.size() == 1 && runs.front().m == 0.0;
         const int parallel_run_count =
-            configured_parallel_run_count(max_repertoire_count);
+            configured_parallel_run_count(max_estimated_run_memory_bytes, runs.size());
         const bool parallelize_runs =
             !parallelize_single_run_by_island && parallel_run_count > 1;
 
         std::cout << "Max reachable repertoires: " << max_repertoire_count
+                  << "; estimated peak/run: " << gib(max_estimated_run_memory_bytes) << " GiB"
+                  << "; memory budget: " << gib(configured_memory_budget_bytes()) << " GiB"
+                  << "; dense payoff cache: " << (dense_payoff_cache ? "on" : "off")
                   << "; parallel runs: "
                   << (parallelize_runs ? parallel_run_count : 1)
                   << '\n';

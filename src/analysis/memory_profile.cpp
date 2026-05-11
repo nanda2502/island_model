@@ -102,7 +102,7 @@ void print_snapshot(const std::string& label) {
         {.columns = 4, .layers = 6, .cross_column_depth = 1, .island_count = 20, .steps = 2},
         {.columns = 5, .layers = 6, .cross_column_depth = 1, .island_count = 20, .steps = 2},
         {.columns = 6, .layers = 6, .cross_column_depth = 1, .island_count = 20, .steps = 2},
-        {.columns = 4, .layers = 6, .cross_column_depth = 6, .island_count = 20, .steps = 2},
+        {.columns = 7, .layers = 6, .cross_column_depth = 1, .island_count = 20, .steps = 1},
     };
 }
 
