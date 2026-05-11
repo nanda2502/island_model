@@ -74,6 +74,7 @@ run_island_model <- function(runs,
                              max_steps = 50000L,
                              bookkeeping_interval = 50L,
                              frequency_threshold = 1e-6,
+                             write_equilibrium_distribution = TRUE,
                              threads = NULL,
                              rebuild = FALSE,
                              verbose = FALSE) {
@@ -110,6 +111,7 @@ run_island_model <- function(runs,
     max_steps = as.integer(max_steps),
     bookkeeping_interval = as.integer(bookkeeping_interval),
     frequency_threshold = as.numeric(frequency_threshold),
+    include_equilibrium_distribution = isTRUE(write_equilibrium_distribution),
     threads = if (is.null(threads)) NULL else as.integer(threads)
   )
 }

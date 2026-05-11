@@ -28,7 +28,7 @@ plot_dv_by_time <- function(df, dv = "mean_payoff") {
 }
 
 
-plot_dv_by_time_m <- function(df, dv = "mean_payoff") {
+plot_dv_by_time_m <- function(df, dv = "mean_payoff", subset_var = NULL, subset_val = NULL) {
     stopifnot(requireNamespace("ggplot2", quietly = TRUE))
     
     if (!dv %in% names(df)) {
@@ -39,6 +39,10 @@ plot_dv_by_time_m <- function(df, dv = "mean_payoff") {
     }
     if (!"step" %in% names(df)) {
         stop("Column 'step' not found in df.")
+    }
+    
+    if (!is.null(subset_var) & !is.null(subset_val)) {
+        df <- df[df[[subset_var]] == subset_val,]
     }
     
     ggplot2::ggplot(

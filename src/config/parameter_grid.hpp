@@ -15,6 +15,7 @@ struct RunConfig {
   std::size_t layers{0};
   std::size_t cross_column_depth{0};
   std::size_t island_count{0};
+  double strictness{1.0};
 
   double m{0.0};
   double rho{0.0};
@@ -37,6 +38,7 @@ struct ParameterGrid {
   std::vector<std::size_t> cross_column_depths;
   std::vector<std::size_t> island_counts;
   std::vector<std::uint64_t> seeds;
+  std::vector<double> strictnesses;
 
   std::vector<double> ms;
   std::vector<double> rhos;
@@ -64,6 +66,8 @@ inline void validate_grid(const ParameterGrid &grid) {
     throw std::invalid_argument("ParameterGrid: island_counts is empty");
   if (grid.seeds.empty())
     throw std::invalid_argument("ParameterGrid: seeds is empty");
+  if (grid.strictnesses.empty())
+    throw std::invalid_argument("ParameterGrid: strictnesses is empty");
 
   if (grid.ms.empty())
     throw std::invalid_argument("ParameterGrid: ms is empty");
@@ -98,6 +102,8 @@ inline void validate_grid(const ParameterGrid &grid) {
     return false;
   }
   if (cfg.cross_column_depth > cfg.layers)
+    return false;
+  if (cfg.strictness != 0.0 && cfg.strictness != 1.0)
     return false;
   if (cfg.m < 0.0 || cfg.m > 1.0)
     return false;
@@ -135,42 +141,45 @@ make_parameter_combinations(const ParameterGrid &grid) {
       for (const auto cross_column_depth : grid.cross_column_depths) {
         for (const auto island_count : grid.island_counts) {
           for (const auto seed : grid.seeds) {
-            for (const auto m : grid.ms) {
-              for (const auto rho : grid.rhos) {
-                for (const auto mu : grid.mus) {
-                  for (const auto alpha : grid.alphas) {
-                    for (const auto beta : grid.betas) {
-                      for (const auto lambda : grid.lambdas) {
-                        for (const auto gamma : grid.gammas) {
-                          for (const auto eta : grid.etas) {
-                            for (const auto delta : grid.deltas) {
-                              for (const auto sigma_b : grid.sigma_bs) {
-                                for (const auto sigma_nu : grid.sigma_nus) {
-                                  for (const auto k : grid.ks) {
-                                    RunConfig cfg{.run_id = run_id,
-                                                  .seed = seed,
-                                                  .columns = columns,
-                                                  .layers = layers,
-                                                  .cross_column_depth =
-                                                      cross_column_depth,
-                                                  .island_count = island_count,
-                                                  .m = m,
-                                                  .rho = rho,
-                                                  .mu = mu,
-                                                  .alpha = alpha,
-                                                  .beta = beta,
-                                                  .lambda = lambda,
-                                                  .gamma = gamma,
-                                                  .eta = eta,
-                                                  .delta = delta,
-                                                  .sigma_b = sigma_b,
-                                                  .sigma_nu = sigma_nu,
-                                                  .k = k};
-                                    if (!is_valid_run_config(cfg)) {
-                                      continue;
+            for (const auto strictness : grid.strictnesses) {
+              for (const auto m : grid.ms) {
+                for (const auto rho : grid.rhos) {
+                  for (const auto mu : grid.mus) {
+                    for (const auto alpha : grid.alphas) {
+                      for (const auto beta : grid.betas) {
+                        for (const auto lambda : grid.lambdas) {
+                          for (const auto gamma : grid.gammas) {
+                            for (const auto eta : grid.etas) {
+                              for (const auto delta : grid.deltas) {
+                                for (const auto sigma_b : grid.sigma_bs) {
+                                  for (const auto sigma_nu : grid.sigma_nus) {
+                                    for (const auto k : grid.ks) {
+                                      RunConfig cfg{.run_id = run_id,
+                                                    .seed = seed,
+                                                    .columns = columns,
+                                                    .layers = layers,
+                                                    .cross_column_depth =
+                                                        cross_column_depth,
+                                                    .island_count = island_count,
+                                                    .strictness = strictness,
+                                                    .m = m,
+                                                    .rho = rho,
+                                                    .mu = mu,
+                                                    .alpha = alpha,
+                                                    .beta = beta,
+                                                    .lambda = lambda,
+                                                    .gamma = gamma,
+                                                    .eta = eta,
+                                                    .delta = delta,
+                                                    .sigma_b = sigma_b,
+                                                    .sigma_nu = sigma_nu,
+                                                    .k = k};
+                                      if (!is_valid_run_config(cfg)) {
+                                        continue;
+                                      }
+                                      combinations.push_back(cfg);
+                                      ++run_id;
                                     }
-                                    combinations.push_back(cfg);
-                                    ++run_id;
                                   }
                                 }
                               }

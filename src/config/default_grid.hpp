@@ -7,33 +7,43 @@ namespace island_model {
 inline ParameterGrid make_default_grid() {
     ParameterGrid grid;
 
+    grid.seeds = {12345, 67890, 11111, 22222, 33333};
+    grid.island_counts = {10,20};
+    
     // Lattice structure
-    grid.columns = {8, 16};
+    grid.columns = {4};
     grid.layers = {6};
     grid.cross_column_depths = {1};
-    grid.island_counts = {20};
-    grid.seeds = {12345, 67890, 11111, 22222, 33333,
-                  44444, 55555, 66666, 77777, 88888};
+    grid.strictnesses = {1.0};
+    
+    
+    // Migration
+    grid.ms = {0.0, 0.01, 0.1, 0.3};
 
-    // Divergence under migration, with independent local landscapes
-    grid.ms = {0.0, 0.01, 0.03, 0.1, 0.3};
-    grid.ks = {0.0};
-
-    // Minimal learning/transmission parameters
+    // Reset and innovation rate
     grid.rhos = {0.02, 0.05, 0.1, 0.2};
-    grid.mus = {0.01, 0.03, 0.05, 0.1};
-    grid.alphas = {1.0, 1.5, 2.0, 3.0};
-    grid.betas = {0.5, 1.0, 2.0, 3.0};
-
-    // Keep complex cognitive mechanisms off
+    grid.mus = {0.01};
+    
+    // Conformity
+    grid.alphas = {1.0, 3.0};
+    // Payoff expression bias
+    grid.betas = {1.0};
+    // Prestige
     grid.lambdas = {0.0};
+    // Payoff
     grid.gammas = {0.0};
-    grid.etas = {0.0};
+    // Transparency
+    grid.etas = {1.0};
 
     // Payoff structure
-    grid.deltas = {1.0, 2.0, 3.0};
-    grid.sigma_bs = {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0};
-    grid.sigma_nus = {0.0, 0.05};
+    // Increase in payoff for deeper traits
+    grid.deltas = {1.0};
+    // Ruggedness of payoffs across columns
+    grid.sigma_bs = {0.0, 0.25, 1.0};
+    // Trait-level variation
+    grid.sigma_nus = {0.0};
+    // Payoff correlation between islands
+    grid.ks = {0.0};
 
     return grid;
 }
@@ -48,6 +58,7 @@ inline ParameterGrid make_test_grid() {
     grid.cross_column_depths = {6};
     grid.island_counts = {10};
     grid.seeds = {12345};
+    grid.strictnesses = {1.0};
 
     // Migration 
     grid.ms = {0.0};

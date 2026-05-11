@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdexcept>
 #include <vector>
 
 #include "../state_space/repertoire.hpp"
@@ -15,11 +16,20 @@ public:
 
     Prerequisites() = default;
 
-    explicit Prerequisites(lattice_type lattice)
-        : lattice_(lattice) {}
+    explicit Prerequisites(lattice_type lattice, double strictness = 1.0)
+        : lattice_(lattice),
+          strictness_(strictness) {
+        if (strictness_ != 0.0 && strictness_ != 1.0) {
+            throw std::invalid_argument("Prerequisites: strictness must be 0 or 1");
+        }
+    }
 
     [[nodiscard]] const lattice_type& lattice() const noexcept {
         return lattice_;
+    }
+
+    [[nodiscard]] double strictness() const noexcept {
+        return strictness_;
     }
 
     [[nodiscard]] bool has_any_parent(TraitId trait, const repertoire_type& r) const {
@@ -41,6 +51,10 @@ public:
             return true;
         }
 
+        if (strictness_ == 0.0) {
+            return true;
+        }
+
         return has_any_parent(trait, r);
     }
 
@@ -59,6 +73,7 @@ public:
 
 private:
     lattice_type lattice_{};
+    double strictness_{1.0};
 };
 
 } // namespace island_model

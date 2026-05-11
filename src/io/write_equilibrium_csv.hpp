@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "../analysis/metrics.hpp"
+#include "../analysis/time_bookkeeping.hpp"
 #include "../model/payoff_landscape.hpp"
 #include "../state/population_state.hpp"
 #include "../state_space/reachable_states.hpp"
@@ -13,6 +14,7 @@
 namespace island_model {
 
 struct EquilibriumRunMetadata {
+    std::size_t run_index{0};
     std::uint64_t run_id{0};
     std::uint64_t seed{0};
 
@@ -20,6 +22,7 @@ struct EquilibriumRunMetadata {
     std::size_t layers{0};
     std::size_t cross_column_depth{0};
     std::size_t island_count{0};
+    double strictness{1.0};
 
     double m{0.0};
     double rho{0.0};
@@ -48,27 +51,8 @@ public:
 
     static void write_header(std::ostream& out) {
         out
+            << "run_index,"
             << "run_id,"
-            << "seed,"
-            << "columns,"
-            << "layers,"
-            << "cross_column_depth,"
-            << "island_count,"
-            << "m,"
-            << "rho,"
-            << "mu,"
-            << "alpha,"
-            << "beta,"
-            << "lambda,"
-            << "gamma,"
-            << "eta,"
-            << "delta,"
-            << "sigma_b,"
-            << "sigma_nu,"
-            << "k,"
-            << "converged,"
-            << "steps_to_equilibrium,"
-            << "final_distance,"
             << "island,"
             << "repertoire_id,"
             << "frequency,"
@@ -168,27 +152,8 @@ private:
                           double adaptive_divergence_run,
                           double cultural_divergence_run,
                           std::size_t divergence_pair_count_run) {
-        out << meta.run_id << ','
-            << meta.seed << ','
-            << meta.columns << ','
-            << meta.layers << ','
-            << meta.cross_column_depth << ','
-            << meta.island_count << ','
-            << meta.m << ','
-            << meta.rho << ','
-            << meta.mu << ','
-            << meta.alpha << ','
-            << meta.beta << ','
-            << meta.lambda << ','
-            << meta.gamma << ','
-            << meta.eta << ','
-            << meta.delta << ','
-            << meta.sigma_b << ','
-            << meta.sigma_nu << ','
-            << meta.k << ','
-            << meta.converged << ','
-            << meta.steps_to_equilibrium << ','
-            << meta.final_distance << ','
+        out << meta.run_index << ','
+            << meta.run_id << ','
             << island << ','
             << repertoire_id << ','
             << frequency << ','
@@ -204,6 +169,51 @@ private:
     }
 };
 
+class EquilibriumSummaryCsvWriter {
+public:
+    static void write_header(std::ostream& out) {
+        out
+            << "run_index,"
+            << "run_id,"
+            << "converged,"
+            << "steps_to_equilibrium,"
+            << "final_distance,"
+            << "adaptive_divergence,"
+            << "cultural_divergence,"
+            << "divergence_pair_count,"
+            << "mean_payoff,"
+            << "adj_payoff,"
+            << "mean_max_depth,"
+            << "mean_depth,"
+            << "eff_column,"
+            << "top_col_mass,"
+            << "mean_rep_size,"
+            << "empty_rep_size\n";
+    }
+
+    static void write_row(std::ostream& out,
+                          const EquilibriumRunMetadata& meta,
+                          const PopulationBookkeepingSnapshot& summary) {
+        out << meta.run_index << ','
+            << meta.run_id << ','
+            << meta.converged << ','
+            << meta.steps_to_equilibrium << ','
+            << meta.final_distance << ','
+            << summary.adaptive_divergence << ','
+            << summary.cultural_divergence << ','
+            << summary.divergence_pair_count << ','
+            << summary.mean_payoff << ','
+            << summary.adj_payoff << ','
+            << summary.mean_max_depth << ','
+            << summary.mean_depth << ','
+            << summary.eff_column << ','
+            << summary.top_col_mass << ','
+            << summary.mean_rep_size << ','
+            << summary.empty_rep_size
+            << '\n';
+    }
+};
+
 class TraitEquilibriumCsvWriter {
 public:
     using reachable_states_type = ReachableStates;
@@ -211,27 +221,8 @@ public:
 
     static void write_header(std::ostream& out) {
         out
+            << "run_index,"
             << "run_id,"
-            << "seed,"
-            << "columns,"
-            << "layers,"
-            << "cross_column_depth,"
-            << "island_count,"
-            << "m,"
-            << "rho,"
-            << "mu,"
-            << "alpha,"
-            << "beta,"
-            << "lambda,"
-            << "gamma,"
-            << "eta,"
-            << "delta,"
-            << "sigma_b,"
-            << "sigma_nu,"
-            << "k,"
-            << "converged,"
-            << "steps_to_equilibrium,"
-            << "final_distance,"
             << "island,"
             << "trait_id,"
             << "trait_column,"
@@ -252,27 +243,8 @@ public:
         for (IslandId island = 0; island < frequencies.island_count; ++island) {
             for (TraitId trait = 0; trait < frequencies.trait_count; ++trait) {
                 const auto pos = lattice.pos(trait);
-                out << meta.run_id << ','
-                    << meta.seed << ','
-                    << meta.columns << ','
-                    << meta.layers << ','
-                    << meta.cross_column_depth << ','
-                    << meta.island_count << ','
-                    << meta.m << ','
-                    << meta.rho << ','
-                    << meta.mu << ','
-                    << meta.alpha << ','
-                    << meta.beta << ','
-                    << meta.lambda << ','
-                    << meta.gamma << ','
-                    << meta.eta << ','
-                    << meta.delta << ','
-                    << meta.sigma_b << ','
-                    << meta.sigma_nu << ','
-                    << meta.k << ','
-                    << meta.converged << ','
-                    << meta.steps_to_equilibrium << ','
-                    << meta.final_distance << ','
+                out << meta.run_index << ','
+                    << meta.run_id << ','
                     << island << ','
                     << trait << ','
                     << pos.column << ','

@@ -15,12 +15,13 @@ source("island_model_plotting.R")
 
 runs <- expand.grid(
     "seed" = c(12345),                        
-    "columns" = c(24),                  
-    "layers" = c(1),
+    "columns" = c(4),                  
+    "layers" = c(5),
     "cross_column_depth" = c(1),       # max layer at which there should be incoming diagonal edges (1 for none) 
+    "strictness" = c(0,1),             # 0 for unrestricted learning, 1 for restricted by structure 
     "island_count" = c(10),
     "m" = c(0.01, 0.1, 0.3),           # migration rate (0 for no migration, 1 for complete mixing)
-    "rho" = c(0.1),                    # reset rate 
+    "rho" = c(0.01),                   # reset rate 
     "mu" = c(0.05),                    # innovation rate
     "alpha" = c(1),                    # frequency bias (1 for random copying, >1 for conformity, <1 for anti-conformity)
     "beta" = c(1),                     # payoff expression bias (0 for no payoff bias, >0 for more bias towards expressing higher payoff traits)
@@ -35,21 +36,30 @@ runs <- expand.grid(
 
 res <- run_island_model(runs, threads = 15)
 
-#saveRDS(res, "res_expbias.rds")
+saveRDS(res, "res.rds")
+
+
 
 #res <- readRDS("res.rds")
+
+time <- read.csv("time_bookkeeping.csv", header = T)
 
 ##### plot #####
 
 plot_trait_equilibrium_graph_by_island(subset(res$traits, run_id == 0), n = 10)
 
-plot_dv_by_time_m(res$time, "cultural_divergence")
+plot_dv_by_time_m(res$time, "cultural_divergence", "strictness", 1)
 
 plot_dv_by_time_m(res$time, "adaptive_divergence")
 
 
-tapply(res$equilibrium$cultural_divergence_run, res$equilibrium$m, max)
-tapply(res$equilibrium$adaptive_divergence_run, res$equilibrium$m, max)
+df1 <- subset(res$equilibrium, strictness == 1)
+df2 <- subset(res$equilibrium, strictness == 0)
+
+
+
+tapply(df1$cultural_divergence_run, df1$m, max)
+tapply(df2$cultural_divergence_run, df2$m, max)
 
 
 p1 <- res$time %>%

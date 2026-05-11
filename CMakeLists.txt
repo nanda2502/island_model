@@ -35,6 +35,7 @@ file(WRITE "${HEADER_SMOKE_SOURCE}" [=[
 #include "dynamics/visibility.hpp"
 #include "dynamics/weights.hpp"
 #include "io/write_equilibrium_csv.hpp"
+#include "io/write_run_parameters_csv.hpp"
 #include "io/write_time_bookkeeping_csv.hpp"
 #include "model/lattice.hpp"
 #include "model/payoff_landscape.hpp"
@@ -51,6 +52,7 @@ int main() {
 
     im::Lattice lattice(3, 2);
     im::ReachableStates states(lattice);
+    im::ReachableStates loose_states(lattice, 0.0);
     std::mt19937_64 rng(123);
     im::PayoffParams payoff_params{.delta = 1.0, .sigma_b = 0.5, .sigma_nu = 0.1, .k = 0.25};
     im::PayoffLandscape payoff(lattice, 2, payoff_params, rng);
@@ -64,12 +66,14 @@ int main() {
     im::EquilibriumCsvWriter::write_header(out);
 
     const im::EquilibriumRunMetadata meta{
+        .run_index = 0,
         .run_id = 1,
         .seed = 123,
         .columns = lattice.columns(),
         .layers = lattice.layers(),
         .cross_column_depth = lattice.cross_column_depth(),
         .island_count = payoff.island_count(),
+        .strictness = states.strictness(),
         .m = dynamics.m,
         .rho = dynamics.rho,
         .mu = dynamics.mu,
@@ -89,7 +93,7 @@ int main() {
 
     im::EquilibriumCsvWriter::write_rows(out, meta, next, states, payoff);
 
-    return summary.repertoire_size > lattice.trait_count() ? 1 : 0;
+    return summary.repertoire_size > lattice.trait_count() || loose_states.size() != 64 ? 1 : 0;
 }
 ]=])
 
@@ -102,3 +106,12 @@ add_executable(
 )
 target_link_libraries(divergence_test PRIVATE island_model_headers)
 add_test(NAME divergence_test COMMAND divergence_test)
+
+add_executable(
+    memory_profile
+    "${CMAKE_SOURCE_DIR}/src/analysis/memory_profile.cpp"
+)
+target_link_libraries(memory_profile PRIVATE island_model_headers)
+if(WIN32)
+    target_link_libraries(memory_profile PRIVATE psapi)
+endif()

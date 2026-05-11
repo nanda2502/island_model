@@ -34,22 +34,27 @@ public:
 
     ReachableStates() = default;
 
-    explicit ReachableStates(lattice_type lattice)
+    explicit ReachableStates(lattice_type lattice, double strictness = 1.0)
         : lattice_(lattice),
-          prerequisites_(lattice_) {
+          prerequisites_(lattice_, strictness) {
         build();
     }
 
     ReachableStates(lattice_type lattice,
+                    double strictness,
                     std::size_t log_interval,
                     const build_progress_callback_type& progress_callback)
         : lattice_(lattice),
-          prerequisites_(lattice_) {
+          prerequisites_(lattice_, strictness) {
         build(log_interval, progress_callback);
     }
 
     [[nodiscard]] const lattice_type& lattice() const noexcept {
         return lattice_;
+    }
+
+    [[nodiscard]] double strictness() const noexcept {
+        return prerequisites_.strictness();
     }
 
     [[nodiscard]] static StateId empty_state()  noexcept {

@@ -7,7 +7,6 @@
 
 #include <cmath>
 #include <cstdlib>
-#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <random>

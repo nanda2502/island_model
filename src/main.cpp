@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <cstdint>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -10,18 +9,14 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
-#include <utility>
-#include <vector>
 
 #include <omp.h>
 
 #include "config/default_grid.hpp"
 #include "config/parameter_grid.hpp"
-#include "dynamics/simulator.hpp"
 #include "io/write_equilibrium_csv.hpp"
+#include "io/write_run_parameters_csv.hpp"
 #include "io/write_time_bookkeeping_csv.hpp"
-#include "model/lattice.hpp"
-#include "model/payoff_landscape.hpp"
 #include "state_space/reachable_states.hpp"
 
 namespace im = island_model;
@@ -78,28 +73,11 @@ void append_file_contents(std::ostream& output, const std::filesystem::path& pat
     }
 }
 
-void write_equilibrium_failure_row(std::ostream& out, const im::RunConfig& cfg) {
-    out << cfg.run_id << ','
-        << cfg.seed << ','
-        << cfg.columns << ','
-        << cfg.layers << ','
-        << cfg.cross_column_depth << ','
-        << cfg.island_count << ','
-        << cfg.m << ','
-        << cfg.rho << ','
-        << cfg.mu << ','
-        << cfg.alpha << ','
-        << cfg.beta << ','
-        << cfg.lambda << ','
-        << cfg.gamma << ','
-        << cfg.eta << ','
-        << cfg.delta << ','
-        << cfg.sigma_b << ','
-        << cfg.sigma_nu << ','
-        << cfg.k << ','
-        << 0 << ','
-        << 0 << ','
-        << -1.0 << ','
+void write_equilibrium_failure_row(std::ostream& out,
+                                   const im::RunConfig& cfg,
+                                   std::size_t run_index) {
+    out << run_index << ','
+        << cfg.run_id << ','
         << 0 << ','
         << 0 << ','
         << 0.0 << ','
@@ -113,34 +91,64 @@ void write_equilibrium_failure_row(std::ostream& out, const im::RunConfig& cfg) 
         << 0.0 << '\n';
 }
 
-void write_trait_failure_row(std::ostream& out, const im::RunConfig& cfg) {
-    out << cfg.run_id << ','
-        << cfg.seed << ','
-        << cfg.columns << ','
-        << cfg.layers << ','
-        << cfg.cross_column_depth << ','
-        << cfg.island_count << ','
-        << cfg.m << ','
-        << cfg.rho << ','
-        << cfg.mu << ','
-        << cfg.alpha << ','
-        << cfg.beta << ','
-        << cfg.lambda << ','
-        << cfg.gamma << ','
-        << cfg.eta << ','
-        << cfg.delta << ','
-        << cfg.sigma_b << ','
-        << cfg.sigma_nu << ','
-        << cfg.k << ','
-        << 0 << ','
-        << 0 << ','
-        << -1.0 << ','
+void write_trait_failure_row(std::ostream& out,
+                             const im::RunConfig& cfg,
+                             std::size_t run_index) {
+    out << run_index << ','
+        << cfg.run_id << ','
         << 0 << ','
         << 0 << ','
         << 0 << ','
         << 0 << ','
         << 1 << ','
         << 0.0 << '\n';
+}
+
+void write_equilibrium_summary_failure_row(std::ostream& out,
+                                           const im::RunConfig& cfg,
+                                           std::size_t run_index) {
+    const im::EquilibriumRunMetadata meta{
+        .run_index = run_index,
+        .run_id = cfg.run_id,
+        .converged = 0,
+        .steps_to_equilibrium = 0,
+        .final_distance = -1.0
+    };
+    im::EquilibriumSummaryCsvWriter::write_row(
+        out,
+        meta,
+        im::PopulationBookkeepingSnapshot{});
+}
+
+void write_run_parameters_failure_row(std::ostream& out,
+                                      const im::RunConfig& cfg,
+                                      std::size_t run_index) {
+    const im::EquilibriumRunMetadata meta{
+        .run_index = run_index,
+        .run_id = cfg.run_id,
+        .seed = cfg.seed,
+        .columns = cfg.columns,
+        .layers = cfg.layers,
+        .cross_column_depth = cfg.cross_column_depth,
+        .island_count = cfg.island_count,
+        .strictness = cfg.strictness,
+        .m = cfg.m,
+        .rho = cfg.rho,
+        .mu = cfg.mu,
+        .alpha = cfg.alpha,
+        .beta = cfg.beta,
+        .lambda = cfg.lambda,
+        .gamma = cfg.gamma,
+        .eta = cfg.eta,
+        .delta = cfg.delta,
+        .sigma_b = cfg.sigma_b,
+        .sigma_nu = cfg.sigma_nu,
+        .k = cfg.k,
+        .converged = 0,
+        .steps_to_equilibrium = 0,
+        .final_distance = -1.0
+    };
+    im::RunParametersCsvWriter::write_row(out, meta);
 }
 
 [[nodiscard]] int run_parallelism_for_repertoire_count(std::size_t repertoire_count) {
@@ -183,6 +191,8 @@ int main(int argc, char* argv[]) {
     try {
         const bool logging_enabled =
             argc > 1 && std::string(argv[1]) == "1";
+        const bool write_equilibrium_distribution =
+            argc <= 2 || std::string(argv[2]) != "0";
 
         const auto grid = im::make_default_grid();
         const auto runs = im::make_parameter_combinations(grid);
@@ -191,11 +201,13 @@ int main(int argc, char* argv[]) {
             std::size_t columns{0};
             std::size_t layers{0};
             std::size_t cross_column_depth{0};
+            double strictness{1.0};
 
             [[nodiscard]] bool operator==(const LatticeConfigKey& other) const noexcept {
                 return columns == other.columns
                     && layers == other.layers
-                    && cross_column_depth == other.cross_column_depth;
+                    && cross_column_depth == other.cross_column_depth
+                    && strictness == other.strictness;
             }
         };
 
@@ -203,7 +215,8 @@ int main(int argc, char* argv[]) {
             [[nodiscard]] std::size_t operator()(const LatticeConfigKey& key) const noexcept {
                 return std::hash<std::size_t>{}(key.columns)
                     ^ (std::hash<std::size_t>{}(key.layers) << 1U)
-                    ^ (std::hash<std::size_t>{}(key.cross_column_depth) << 2U);
+                    ^ (std::hash<std::size_t>{}(key.cross_column_depth) << 2U)
+                    ^ (std::hash<double>{}(key.strictness) << 3U);
             }
         };
 
@@ -217,7 +230,8 @@ int main(int argc, char* argv[]) {
             const LatticeConfigKey key{
                 .columns = cfg.columns,
                 .layers = cfg.layers,
-                .cross_column_depth = cfg.cross_column_depth
+                .cross_column_depth = cfg.cross_column_depth,
+                .strictness = cfg.strictness
             };
             if (reachable_states_cache.contains(key)) {
                 continue;
@@ -228,6 +242,7 @@ int main(int argc, char* argv[]) {
             if (logging_enabled) {
                 std::cout << "[lattice " << cfg.columns << "x" << cfg.layers
                           << ", cross-column depth " << cfg.cross_column_depth
+                          << ", strictness " << cfg.strictness
                           << "] preprocessing: building reachable states" << '\n';
             }
 
@@ -237,6 +252,7 @@ int main(int argc, char* argv[]) {
                     std::size_t frontier_size) {
                     std::cout << "[lattice " << cfg.columns << "x" << cfg.layers
                               << ", cross-column depth " << cfg.cross_column_depth
+                              << ", strictness " << cfg.strictness
                               << "] reachable states: processed " << processed_states
                               << ", discovered " << discovered_states
                               << ", frontier " << frontier_size << '\n';
@@ -244,6 +260,7 @@ int main(int argc, char* argv[]) {
 
             auto states = std::make_shared<im::ReachableStates>(
                 lattice,
+                cfg.strictness,
                 logging_enabled ? 100 : 0,
                 logging_enabled
                     ? im::ReachableStates::build_progress_callback_type(log_reachable_states_progress)
@@ -275,17 +292,22 @@ int main(int argc, char* argv[]) {
             const auto& cfg = runs[run_index];
             const auto equilibrium_path =
                 run_fragment_path(temp_results_dir, "equilibrium", run_index);
+            const auto equilibrium_summary_path =
+                run_fragment_path(temp_results_dir, "equilibrium_summary", run_index);
             const auto trait_path =
                 run_fragment_path(temp_results_dir, "trait_equilibrium", run_index);
             const auto bookkeeping_path =
                 run_fragment_path(temp_results_dir, "time_bookkeeping", run_index);
+            const auto run_parameters_path =
+                run_fragment_path(temp_results_dir, "run_parameters", run_index);
 
             try {
                 const im::Lattice lattice(cfg.columns, cfg.layers, cfg.cross_column_depth);
                 const LatticeConfigKey lattice_key{
                     .columns = cfg.columns,
                     .layers = cfg.layers,
-                    .cross_column_depth = cfg.cross_column_depth
+                    .cross_column_depth = cfg.cross_column_depth,
+                    .strictness = cfg.strictness
                 };
                 const auto states_it = reachable_states_cache.find(lattice_key);
                 if (states_it == reachable_states_cache.end()) {
@@ -346,12 +368,14 @@ int main(int argc, char* argv[]) {
                 );
 
                 const im::EquilibriumRunMetadata meta{
+                    .run_index = run_index,
                     .run_id = cfg.run_id,
                     .seed = cfg.seed,
                     .columns = cfg.columns,
                     .layers = cfg.layers,
                     .cross_column_depth = cfg.cross_column_depth,
                     .island_count = cfg.island_count,
+                    .strictness = cfg.strictness,
                     .m = cfg.m,
                     .rho = cfg.rho,
                     .mu = cfg.mu,
@@ -369,14 +393,26 @@ int main(int argc, char* argv[]) {
                     .final_distance = eq.final_distance
                 };
 
-                auto out = open_output_file(equilibrium_path);
-                im::EquilibriumCsvWriter::write_rows(
-                    out,
+                auto run_parameters_out = open_output_file(run_parameters_path);
+                im::RunParametersCsvWriter::write_row(run_parameters_out, meta);
+
+                if (write_equilibrium_distribution) {
+                    auto out = open_output_file(equilibrium_path);
+                    im::EquilibriumCsvWriter::write_rows(
+                        out,
+                        meta,
+                        eq.state,
+                        *states,
+                        payoff,
+                        1e-6
+                    );
+                }
+
+                auto equilibrium_summary_out = open_output_file(equilibrium_summary_path);
+                im::EquilibriumSummaryCsvWriter::write_row(
+                    equilibrium_summary_out,
                     meta,
-                    eq.state,
-                    *states,
-                    payoff,
-                    1e-6
+                    eq.bookkeeping.back()
                 );
 
                 auto trait_out = open_output_file(trait_path);
@@ -395,11 +431,19 @@ int main(int argc, char* argv[]) {
                 );
             } catch (const std::exception& e) {
                 try {
-                    auto out = open_output_file(equilibrium_path);
-                    write_equilibrium_failure_row(out, cfg);
+                    auto run_parameters_out = open_output_file(run_parameters_path);
+                    write_run_parameters_failure_row(run_parameters_out, cfg, run_index);
+
+                    if (write_equilibrium_distribution) {
+                        auto out = open_output_file(equilibrium_path);
+                        write_equilibrium_failure_row(out, cfg, run_index);
+                    }
+
+                    auto equilibrium_summary_out = open_output_file(equilibrium_summary_path);
+                    write_equilibrium_summary_failure_row(equilibrium_summary_out, cfg, run_index);
 
                     auto trait_out = open_output_file(trait_path);
-                    write_trait_failure_row(trait_out, cfg);
+                    write_trait_failure_row(trait_out, cfg, run_index);
 
                     auto bookkeeping_out = open_output_file(bookkeeping_path);
                 } catch (const std::exception& write_error) {
@@ -418,14 +462,38 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        std::ofstream file("../equilibrium_distribution.csv");
-        if (!file) {
-            throw std::runtime_error("Failed to open equilibrium_distribution.csv");
+        std::ofstream run_parameters_file("../run_parameters.csv");
+        if (!run_parameters_file) {
+            throw std::runtime_error("Failed to open run_parameters.csv");
         }
 
-        im::EquilibriumCsvWriter::write_header(file);
+        im::RunParametersCsvWriter::write_header(run_parameters_file);
         for (std::size_t i = 0; i < runs.size(); ++i) {
-            append_file_contents(file, run_fragment_path(temp_results_dir, "equilibrium", i));
+            append_file_contents(run_parameters_file, run_fragment_path(temp_results_dir, "run_parameters", i));
+        }
+
+        if (write_equilibrium_distribution) {
+            std::ofstream file("../equilibrium_distribution.csv");
+            if (!file) {
+                throw std::runtime_error("Failed to open equilibrium_distribution.csv");
+            }
+
+            im::EquilibriumCsvWriter::write_header(file);
+            for (std::size_t i = 0; i < runs.size(); ++i) {
+                append_file_contents(file, run_fragment_path(temp_results_dir, "equilibrium", i));
+            }
+        }
+
+        std::ofstream equilibrium_summary_file("../equilibrium_summary.csv");
+        if (!equilibrium_summary_file) {
+            throw std::runtime_error("Failed to open equilibrium_summary.csv");
+        }
+
+        im::EquilibriumSummaryCsvWriter::write_header(equilibrium_summary_file);
+        for (std::size_t i = 0; i < runs.size(); ++i) {
+            append_file_contents(
+                equilibrium_summary_file,
+                run_fragment_path(temp_results_dir, "equilibrium_summary", i));
         }
 
         std::ofstream trait_file("../equilibrium_trait_distribution.csv");
