@@ -263,7 +263,9 @@ private:
     [[nodiscard]] StateId insert_state(const repertoire_type& r) {
         const auto id = static_cast<StateId>(states_.size());
         states_.push_back(StateRecord{
-            .present_traits = enumerate_present_traits(r)
+            .present_traits = enumerate_present_traits(r),
+            .accessible_traits = {},
+            .successors = {}
         });
         generic_repertoires_.push_back(r);
         index_.emplace(r, id);

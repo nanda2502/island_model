@@ -122,6 +122,17 @@ public:
         visibility_field_type out(payoff.lattice(), island_count);
         out.fill(0.0);
 
+        if (lambda == 0.0) {
+            compute_without_repertoire_bias(
+                migrated_state,
+                states,
+                payoff,
+                payoff_cache,
+                beta,
+                out);
+            return out;
+        }
+
         std::vector<double> repertoire_weights(island_count * state_count, 0.0);
 
         #pragma omp parallel for schedule(static)
@@ -135,9 +146,7 @@ public:
 
                 const std::size_t flat_index = index(island, state, state_count);
                 repertoire_weights[flat_index] =
-                    lambda == 0.0
-                        ? mass
-                        : mass * std::pow(payoff_cache.payoff_sum(island, state), lambda);
+                    mass * std::pow(payoff_cache.payoff_sum(island, state), lambda);
             }
         }
 
@@ -191,6 +200,50 @@ public:
     }
 
 private:
+    static void compute_without_repertoire_bias(const population_state_type& migrated_state,
+                                                const reachable_states_type& states,
+                                                const payoff_landscape_type& payoff,
+                                                const repertoire_payoff_cache_type& payoff_cache,
+                                                double beta,
+                                                visibility_field_type& out) {
+        const std::size_t island_count = migrated_state.island_count();
+        const std::size_t state_count = states.size();
+
+        #pragma omp parallel for schedule(static)
+        for (std::size_t island_idx = 0; island_idx < island_count; ++island_idx) {
+            const auto island = static_cast<IslandId>(island_idx);
+
+            double normalizer = 0.0;
+            for (StateId state = 0; state < state_count; ++state) {
+                normalizer += migrated_state(island, state);
+            }
+            if (normalizer == 0.0) {
+                continue;
+            }
+
+            for (StateId state = 0; state < state_count; ++state) {
+                const double mass = migrated_state(island, state);
+                if (mass == 0.0) {
+                    continue;
+                }
+
+                const double expression_bias_denom =
+                    payoff_cache.expression_bias_denominator(island, state);
+                if (expression_bias_denom == 0.0) {
+                    continue;
+                }
+
+                const double normalized_repertoire_weight = mass / normalizer;
+                for (TraitId trait : states.present_traits(state)) {
+                    const double numer =
+                        beta == 1.0 ? payoff(island, trait) : std::pow(payoff(island, trait), beta);
+                    out(island, trait) +=
+                        normalized_repertoire_weight * (numer / expression_bias_denom);
+                }
+            }
+        }
+    }
+
     [[nodiscard]] static std::size_t index(IslandId island,
                                            StateId state,
                                            std::size_t state_count) noexcept {

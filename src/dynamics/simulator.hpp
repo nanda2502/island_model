@@ -130,10 +130,10 @@ public:
                 params_.eta);
 
         return StepResult{
-            .migrated_state = migrated_state,
-            .visibility = visibility,
-            .weights = weights,
-            .next_state = next_state
+            .migrated_state = std::move(migrated_state),
+            .visibility = std::move(visibility),
+            .weights = std::move(weights),
+            .next_state = std::move(next_state)
         };
     }
 

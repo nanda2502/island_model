@@ -233,8 +233,10 @@ void write_run_parameters_failure_row(std::ostream& out,
     const auto population_bytes =
         saturating_multiply(saturating_multiply(island_count, states), double_bytes);
 
-    // Current, migrated, next, and Visibility::repertoire_weights can coexist.
-    std::uint64_t estimate = saturating_multiply(population_bytes, 4);
+    // Current, migrated, and next can coexist. Nonzero lambda also needs
+    // Visibility::repertoire_weights.
+    const std::uint64_t population_vector_count = cfg.lambda == 0.0 ? 3ULL : 4ULL;
+    std::uint64_t estimate = saturating_multiply(population_bytes, population_vector_count);
 
     if (dense_payoff_cache) {
         estimate += population_bytes; // expression-bias denominator table.
