@@ -14,6 +14,7 @@
 
 #include "config/default_grid.hpp"
 #include "config/parameter_grid.hpp"
+#include "dynamics/simulator.hpp"
 #include "io/write_equilibrium_csv.hpp"
 #include "io/write_run_parameters_csv.hpp"
 #include "io/write_time_bookkeeping_csv.hpp"
